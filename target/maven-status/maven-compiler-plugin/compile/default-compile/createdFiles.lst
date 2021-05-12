@@ -1,0 +1,5 @@
+bluewave\neo4j\plugins\Neo4JTransactionEventListenerExtensionFactory$Dependencies.class
+bluewave\neo4j\plugins\Neo4JTransactionEventListenerExtensionFactory.class
+bluewave\neo4j\plugins\Neo4JTransactionEventListenerExtensionFactory$CustomGraphDatabaseLifecycle.class
+META-INF\services\org.neo4j.kernel.extension.ExtensionFactory
+bluewave\neo4j\plugins\Neo4JTransactionEventListener.class
