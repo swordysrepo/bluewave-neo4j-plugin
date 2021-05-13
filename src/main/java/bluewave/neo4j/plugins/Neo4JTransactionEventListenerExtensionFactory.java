@@ -11,6 +11,12 @@ import org.neo4j.kernel.lifecycle.Lifecycle;
 import org.neo4j.kernel.lifecycle.LifecycleAdapter;
 import org.neo4j.logging.internal.LogService;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+
 @ServiceProvider
 public class Neo4JTransactionEventListenerExtensionFactory extends ExtensionFactory<Neo4JTransactionEventListenerExtensionFactory.Dependencies> {
 
@@ -32,17 +38,15 @@ public class Neo4JTransactionEventListenerExtensionFactory extends ExtensionFact
     public static class CustomGraphDatabaseLifecycle extends LifecycleAdapter
     {
         private final GraphDatabaseAPI db;
-        private final Dependencies dependencies;
-        private final LogService log;
+        private LogService log;
         private Neo4JTransactionEventListener transactionEventhandler;
         private final DatabaseManagementService databaseManagementService;
         public CustomGraphDatabaseLifecycle(final LogService log, final GraphDatabaseAPI db, final Dependencies dependencies,final DatabaseManagementService databaseManagementService)
         {
-            this.log = log;
             this.db = db;
-            this.dependencies = dependencies;
             this.databaseManagementService = databaseManagementService;
-            this.transactionEventhandler = new Neo4JTransactionEventListener(databaseManagementService.database("system"), log);
+            this.log = log;
+
 
         }
         @Override
@@ -50,7 +54,7 @@ public class Neo4JTransactionEventListenerExtensionFactory extends ExtensionFact
         {
             if (this.db.databaseName().compareTo("system") != 0)
             {
-                Neo4JTransactionEventListener test = new Neo4JTransactionEventListener(databaseManagementService.database("system"), log);
+                this.transactionEventhandler = new Neo4JTransactionEventListener(this.db, log);
 //                this.transactionMonitorEventhandler = new Neo4JTransactionMonitorEventListener(this.db, this.log);
 //                this.databaseManagementService.registerTransactionEventListener(this.db.databaseName(), this.transactionEventhandler);
                 this.databaseManagementService.registerTransactionEventListener(this.db.databaseName(), this.transactionEventhandler);
