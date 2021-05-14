@@ -51,6 +51,5 @@
             </plugin>
         </plugins>
     </build>
-
-
+    <name>bluewave_tx</name>
 </project>
