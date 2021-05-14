@@ -23,6 +23,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     {
         this.db = graphDatabaseService;
         this.log = logsvc;
+        // can be changed in the future
         logFilePath = Paths.get("C:/", "testing", "test.txt");
 
 
@@ -32,43 +33,42 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
 
 
 
-        Files.writeString(logFilePath, "\n///Transaction Id: " + data.getTransactionId(), StandardOpenOption.APPEND);
         if (data.createdNodes() != null) {
-            Files.writeString(logFilePath, "\n///Created Nodes: " + data.createdNodes(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Created Nodes: " + data.createdNodes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
         if (data.deletedNodes() != null) {
-            Files.writeString(logFilePath, "\n///Deleted Nodes: " + data.deletedNodes(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Deleted Nodes: " + data.deletedNodes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
         if (data.createdRelationships() != null) {
-            Files.writeString(logFilePath, "\n///Created Relationships: " + data.createdRelationships(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Created Relationships: " + data.createdRelationships(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
         if (data.deletedRelationships() != null) {
-            Files.writeString(logFilePath, "\n///Deleted Relationships: " + data.deletedRelationships(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Deleted Relationships: " + data.deletedRelationships(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
         if (data.assignedLabels() != null) {
-            Files.writeString(logFilePath, "\n///Assigned Labels:  " + data.assignedLabels(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Assigned Labels:  " + data.assignedLabels(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
         if (data.removedLabels() != null) {
-            Files.writeString(logFilePath, "\n///Removed Labels: " + data.removedLabels(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Removed Labels: " + data.removedLabels(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
 
 
 
 
         return null;
+
     }
     public void afterCommit(final TransactionData data, final Object state, final GraphDatabaseService databaseService)
 
     {
-// TODO Auto-generated method stub
         try {
-            Files.writeString(logFilePath, "\n///Commit time: " + data.getCommitTime(), StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Commit time: " + data.getCommitTime(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            Files.writeString(logFilePath, "\n///Transaction Id: " + data.getTransactionId(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
     public void afterRollback(final TransactionData data, final Object state, final GraphDatabaseService databaseService)
     {
-// TODO Auto-generated method stub
     }
 }
