@@ -4,7 +4,10 @@ public enum TransactionType {
 
     CREATION,
     DELETION,
-    ASSIGNMENT,
-    REMOVAL
+    LABEL_ASSIGNMENT,
+    LABEL_REMOVAL,
+    PROPERTY_ASSIGNMENT,
+    PROPERTY_REMOVAL,
+    NONE
 
 }
