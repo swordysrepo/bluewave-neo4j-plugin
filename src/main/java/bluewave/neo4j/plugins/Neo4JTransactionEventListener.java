@@ -2,6 +2,7 @@ package bluewave.neo4j.plugins;
 
 import com.google.gson.Gson;
 import org.h2.jdbc.JdbcClob;
+import org.h2.tools.Server;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
@@ -61,37 +62,19 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     public Object beforeCommit(final TransactionData data, final Transaction transaction, final GraphDatabaseService databaseService) throws Exception
     {
 
+        String createQuery = "CREATE TABLE IF NOT EXISTS transaction( " +
+                "id bigint auto_increment, " +
+                "data clob, " +
+                "commitTime LONG, " +
+                "transactionID LONG);";
 
-        String createQuery = "CREATE TABLE transaction IF NOT EXISTS( " +
-                "id INT NOT NULL, " +
-                "type VARCHAR(50), " +
-                "transactionType VARCHAR(50), " +
-                "timestamp LONG, " +
-                "node VARCHAR(50), " +
-                "relationship VARCHAR(50), " +
-                "label VARCHAR(50), " +
-                "propertyname VARCHAR(50), " +
-                "propertyvalue VARCHAR(50) "
-                ;
-
-
-
-
-        //ENUM for type?
-        //think about how to work with json data type for h2
-        //think about how to deal with transactions that affect multiple nodes
-
-
-
-
-
-//
-//        String query = "CREATE (friend:Person {name: 'tester'}) RETURN friend";
-//        session.run(query);
-//        session.close();
-
-//        String insertQuery = "INSERT INTO " + tableName + " VALUES(";
-
+        try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
+//                Server.createTcpServer().start();
+            Statement st = testCon.createStatement();
+            st.executeUpdate(createQuery);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
 
 
         if (data.createdNodes() != null) {
@@ -181,6 +164,14 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     public void afterCommit(final TransactionData data, final Object state, final GraphDatabaseService databaseService)
 
     {
+
+        String createQuery = "CREATE TABLE IF NOT EXISTS transaction( " +
+                "id NOT NULL PRIMARY KEY, " +
+                "data clob, " +
+                "commitTime LONG, " +
+                "transactionID LONG);";
+
+
         try {
             commitTime = data.getCommitTime();
             dataString += "Commit Time | " + data.getCommitTime() + " | ";
@@ -192,15 +183,20 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
 
             // Need to allow for multiple connections simultaneously
             try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
-                Statement st = testCon.createStatement();
-                PreparedStatement preparedStatement = testCon.prepareStatement("INSERT INTO TRANSACTION VALUES (?, ?)");
-                preparedStatement.setInt(1, index++);
+//                Server.createTcpServer().start();
+//                Statement st = testCon.createStatement();
+//                st.executeUpdate(createQuery);
+
+                PreparedStatement preparedStatement = testCon.prepareStatement("INSERT INTO TRANSACTION ( data, commitTime, transactionId) VALUES (?, ?, ?)");
+//                preparedStatement.setInt(1, index++);
 
                 Clob clob = testCon.createClob();
 
 
                 clob.setString(1, dataString);
-                preparedStatement.setClob(2, clob);
+                preparedStatement.setClob(1, clob);
+                preparedStatement.setLong(2, data.getCommitTime());
+                preparedStatement.setLong(3, data.getTransactionId());
                 preparedStatement.executeUpdate();
                 preparedStatement.close();
 //                ResultSet query = st.executeQuery("INSERT INTO transaction VALUES(?, ?)");
