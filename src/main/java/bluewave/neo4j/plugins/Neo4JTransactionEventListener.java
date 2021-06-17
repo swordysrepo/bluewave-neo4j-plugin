@@ -26,8 +26,6 @@ import java.util.stream.Collectors;
 public class Neo4JTransactionEventListener implements TransactionEventListener<Object> {
     GraphDatabaseService db;
     LogService log;
-    Path logFilePath;
-    Neo4j neo4j;
 
     long transactionId;
     long commitTime;
@@ -40,7 +38,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     String relName = "";
     String propName = "";
     String propValue = "";
-    String url = "jdbc:h2:~/h2test";
+    String url = "jdbc:h2:~/h2test;AUTO_SERVER=TRUE;";
     String user = "sa";
     String passwd = "password";
     int index =0;
@@ -54,8 +52,6 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
         this.log = logsvc;
         this.tableName = "transaction";
         this.insertQuery = "INSERT INTO ";
-        // can be changed in the future
-        logFilePath = Paths.get("C:/", "testing", "test.txt");
 
 
     }
@@ -69,7 +65,6 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
                 "transactionID LONG);";
 
         try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
-//                Server.createTcpServer().start();
             Statement st = testCon.createStatement();
             st.executeUpdate(createQuery);
         } catch (SQLException e) {
@@ -82,9 +77,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
             transactionType = TransactionType.CREATION;
 
             dataString += "Created Nodes | " + data.createdNodes() + " | ";
-
-
-
+            
         }
         if (data.deletedNodes() != null) {
             type = "NODE";
@@ -151,12 +144,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
 
             dataString += "Removed Relationship Properties | " + data.removedRelationshipProperties().toString() + " | ";
 
-
         }
-
-
-
-
 
         return null;
 
@@ -183,15 +171,10 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
 
             // Need to allow for multiple connections simultaneously
             try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
-//                Server.createTcpServer().start();
-//                Statement st = testCon.createStatement();
-//                st.executeUpdate(createQuery);
 
                 PreparedStatement preparedStatement = testCon.prepareStatement("INSERT INTO TRANSACTION ( data, commitTime, transactionId) VALUES (?, ?, ?)");
-//                preparedStatement.setInt(1, index++);
 
                 Clob clob = testCon.createClob();
-
 
                 clob.setString(1, dataString);
                 preparedStatement.setClob(1, clob);
@@ -199,9 +182,6 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
                 preparedStatement.setLong(3, data.getTransactionId());
                 preparedStatement.executeUpdate();
                 preparedStatement.close();
-//                ResultSet query = st.executeQuery("INSERT INTO transaction VALUES(?, ?)");
-
-
 
             }
 
