@@ -1,8 +1,5 @@
 package bluewave.neo4j.plugins;
 
-import com.google.gson.Gson;
-import org.h2.jdbc.JdbcClob;
-import org.h2.tools.Server;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
@@ -12,16 +9,8 @@ import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.graphdb.event.TransactionEventListener;
 import org.neo4j.logging.internal.LogService;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.util.*;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
 
 public class Neo4JTransactionEventListener implements TransactionEventListener<Object> {
     GraphDatabaseService db;
@@ -77,7 +66,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
             transactionType = TransactionType.CREATION;
 
             dataString += "Created Nodes | " + data.createdNodes() + " | ";
-            
+
         }
         if (data.deletedNodes() != null) {
             type = "NODE";
