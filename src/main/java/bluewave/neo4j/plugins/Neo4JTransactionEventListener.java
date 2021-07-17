@@ -12,20 +12,14 @@ import org.neo4j.graphdb.event.TransactionEventListener;
 import org.neo4j.logging.internal.LogService;
 
 import java.util.*;
-import java.sql.*;
-
+import javaxt.json.JSONObject;
 import static javaxt.utils.Console.console;
-import javaxt.json.*;
 
 
 public class Neo4JTransactionEventListener implements TransactionEventListener<Object> {
 
     private Logger logger;
-    private java.io.File pluginDir;
-    private final static long  jvm_diff;
-    static {
-        jvm_diff = System.currentTimeMillis()*1000_000-System.nanoTime();
-    }
+    private javaxt.io.File configFile;
 
 
   //**************************************************************************
@@ -33,42 +27,66 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     public Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService, final LogService logsvc){
 
-
+      //Find the config file
         javaxt.io.Jar jar = new javaxt.io.Jar(this);
-        pluginDir = jar.getFile().getParentFile();
-        //console.log(pluginDir);
+        java.io.File pluginDir = jar.getFile().getParentFile();
+        configFile = new javaxt.io.File(pluginDir, "config.json");
 
 
-        javaxt.io.File configFile = new javaxt.io.File(pluginDir, "config.json");
+      //Parse the config file
+        JSONObject config = null;
         try{
-            JSONObject config = new JSONObject(configFile.getText());
-            javaxt.io.Directory logDir = new javaxt.io.Directory(config.get("logger").get("path").toString());
-            logDir.create();
-            if (logDir.exists()){
-                logger = new Logger(logDir.toFile());
-                console.log("starting logger: " + logDir);
-                new Thread(logger).start();
-            }
-
-
-//        String createQuery = "CREATE TABLE IF NOT EXISTS transaction( " +
-//                "id bigint auto_increment, " +
-//                "data clob, " +
-//                "commitTime LONG, " +
-//                "transactionID LONG);";
-//
-//        try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
-//            Statement st = testCon.createStatement();
-//            st.executeUpdate(createQuery);
-//        } catch (SQLException e) {
-//            e.printStackTrace();
-//        }
-
-
+            config = new JSONObject(configFile.getText());
         }
         catch(Exception e){
             console.log(e.getMessage());
+            return;
         }
+
+
+      //Instantiate logger
+        logger = new Logger();
+
+
+      //Set path to the log file directory
+        try{
+            javaxt.io.Directory logDir = new javaxt.io.Directory(config.get("logger").get("path").toString());
+            logger.setDirectory(logDir);
+        }
+        catch(Exception e){
+        }
+
+
+      //Initialize database
+        try{
+            JSONObject json = config.get("database").toJSONObject();
+            String path = json.get("path").toString().replace("\\", "/");
+            javaxt.io.Directory dbDir = new javaxt.io.Directory(path);
+            dbDir.create();
+            path = new java.io.File(dbDir.toString()+"database").getCanonicalPath();
+
+            javaxt.sql.Database database = new javaxt.sql.Database();
+            database.setDriver("H2");
+            database.setHost(path);
+            database.setConnectionPoolSize(25);
+            logger.setDatabase(database);
+        }
+        catch(Exception e){
+
+        }
+
+
+      //Get webserver config
+        try{
+            logger.setWebServer(config.get("webserver").toJSONObject());
+        }
+        catch(Exception e){
+        }
+
+
+        console.log("starting logger...");
+        new Thread(logger).start();
+
     }
 
 
@@ -77,75 +95,76 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     public Object beforeCommit(final TransactionData data, final Transaction transaction,
         final GraphDatabaseService databaseService) throws Exception {
-
+        if (logger==null) return null;
+        String user = data.username();
 
         Iterable<Node> createdNodes = data.createdNodes();
         if (createdNodes!=null) {
             Iterator<Node> it = createdNodes.iterator();
-            if (it.hasNext()) notify("create","nodes",getNodeInfo(it));
+            if (it.hasNext()) logger.log("create","nodes",getNodeInfo(it),user);
         }
 
 
         Iterable<Node> deletedNodes = data.deletedNodes();
         if (data.deletedNodes()!=null) {
             Iterator<Node> it = deletedNodes.iterator();
-            if (it.hasNext()) notify("delete","nodes",getNodeInfo(it));
+            if (it.hasNext()) logger.log("delete","nodes",getNodeInfo(it),user);
         }
 
 
         Iterable<Relationship> createdRelationships = data.createdRelationships();
         if (createdRelationships!=null) {
             Iterator<Relationship> it = createdRelationships.iterator();
-            if (it.hasNext()) notify("create","relationships",getRelationshipInfo(it));
+            if (it.hasNext()) logger.log("create","relationships",getRelationshipInfo(it),user);
         }
 
 
         Iterable<Relationship> deletedRelationships = data.deletedRelationships();
         if (data.deletedRelationships()!=null) {
             Iterator<Relationship> it = deletedRelationships.iterator();
-            if (it.hasNext()) notify("delete","relationships",getRelationshipInfo(it));
+            if (it.hasNext()) logger.log("delete","relationships",getRelationshipInfo(it),user);
         }
 
 
         Iterable<LabelEntry> assignedLabels = data.assignedLabels();
         if (assignedLabels!=null) {
             Iterator<LabelEntry> it = assignedLabels.iterator();
-            if (it.hasNext()) notify("create","labels","");
+            if (it.hasNext()) logger.log("create","labels","",user);
         }
 
 
         Iterable<LabelEntry> removedLabels = data.assignedLabels();
         if (removedLabels!=null) {
             Iterator<LabelEntry> it = removedLabels.iterator();
-            if (it.hasNext()) notify("delete","labels","");
+            if (it.hasNext()) logger.log("delete","labels","",user);
         }
 
 
         Iterable<PropertyEntry<Node>> assignedNodeProperties = data.assignedNodeProperties();
         if (assignedNodeProperties!=null) {
             Iterator<PropertyEntry<Node>> it = assignedNodeProperties.iterator();
-            if (it.hasNext()) notify("create","properties","");
+            if (it.hasNext()) logger.log("create","properties","",user);
         }
 
 
         Iterable<PropertyEntry<Node>> removedNodeProperties = data.removedNodeProperties();
         if (removedNodeProperties!=null) {
             Iterator<PropertyEntry<Node>> it = removedNodeProperties.iterator();
-            if (it.hasNext()) notify("delete","properties","");
+            if (it.hasNext()) logger.log("delete","properties","",user);
         }
 
 
         Iterable<PropertyEntry<Relationship>> assignedRelationshipProperties = data.assignedRelationshipProperties();
         if (assignedRelationshipProperties!=null) {
             Iterator<PropertyEntry<Relationship>> it = assignedRelationshipProperties.iterator();
-            if (it.hasNext()) notify("create","relationship_property","");
+            if (it.hasNext()) logger.log("create","relationship_property","",user);
         }
 
 
         Iterable<PropertyEntry<Relationship>> removedRelationshipProperties = data.removedRelationshipProperties();
         if (removedRelationshipProperties!=null) {
             Iterator<PropertyEntry<Relationship>> it = removedRelationshipProperties.iterator();
-            if (it.hasNext()) notify("delete","relationship_property","");
+            if (it.hasNext()) logger.log("delete","relationship_property","",user);
         }
 
         return null;
@@ -157,43 +176,6 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     public void afterCommit(final TransactionData data, final Object state,
         final GraphDatabaseService databaseService){
-
-
-//        String createQuery = "CREATE TABLE IF NOT EXISTS transaction( " +
-//                "id NOT NULL PRIMARY KEY, " +
-//                "data clob, " +
-//                "commitTime LONG, " +
-//                "transactionID LONG);";
-//
-//
-//        try {
-//            commitTime = data.getCommitTime();
-//            dataString += "Commit Time | " + data.getCommitTime() + " | ";
-//
-//            transactionId = data.getTransactionId();
-//
-//            dataString += "Transaction ID | " + data.getTransactionId() + " | ";
-//
-//
-//            // Need to allow for multiple connections simultaneously
-//            try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
-//
-//                PreparedStatement preparedStatement = testCon.prepareStatement("INSERT INTO TRANSACTION ( data, commitTime, transactionId) VALUES (?, ?, ?)");
-//
-//                Clob clob = testCon.createClob();
-//
-//                clob.setString(1, dataString);
-//                preparedStatement.setClob(1, clob);
-//                preparedStatement.setLong(2, data.getCommitTime());
-//                preparedStatement.setLong(3, data.getTransactionId());
-//                preparedStatement.executeUpdate();
-//                preparedStatement.close();
-//
-//            }
-//
-//        } catch (SQLException e) {
-//            e.printStackTrace();
-//        }
     }
 
 
@@ -202,27 +184,6 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     public void afterRollback(final TransactionData data, final Object state,
         final GraphDatabaseService databaseService){
-    }
-
-
-  //**************************************************************************
-  //** notify
-  //**************************************************************************
-    private void notify(String action, String type, String data){
-
-        long t = getCurrentTime();
-        String msg = t + "," + action + "," + type + "," + data;
-        console.log(msg);
-        if (logger!=null) logger.log(msg);
-
-//        javaxt.http.Request request = new javaxt.http.Request("http://localhost:9080/graph/update");
-//        request.setCredentials("neo4j", "password");
-//        request.write(msg);
-//        if (logger!=null){
-//            logger.log(request.toString());
-//            logger.log(request.getResponse().toString());
-//        }
-
     }
 
 
@@ -279,15 +240,5 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     private String getPropertyInfo(Iterator<Relationship> it){
         StringBuilder str = new StringBuilder();
         return str.toString();
-    }
-
-
-  //**************************************************************************
-  //** getCurrentTime
-  //**************************************************************************
-  /** Returns current time in nanoseconds
-   */
-    private static long getCurrentTime(){
-        return System.nanoTime()+jvm_diff;
     }
 }
