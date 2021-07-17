@@ -11,6 +11,7 @@ import java.sql.Clob;
 import java.sql.PreparedStatement;
 
 import javaxt.sql.*;
+import javaxt.json.JSONArray;
 import javaxt.json.JSONObject;
 import static javaxt.utils.Console.console;
 
@@ -98,13 +99,25 @@ public class Logger implements Runnable {
   //**************************************************************************
   //** log
   //**************************************************************************
-    public void log(String action, String type, String data, String user){
+    public void log(String action, String type, JSONArray data, String user){
         long t = getCurrentTime();
 
         synchronized (pool) {
             pool.add(new Object[]{
                 t, action, type, data, user
             });
+            pool.notifyAll();
+        }
+    }
+
+
+  //**************************************************************************
+  //** stop
+  //**************************************************************************
+    public void stop(){
+        synchronized (pool) {
+            pool.clear();
+            pool.add(0, null);
             pool.notifyAll();
         }
     }
@@ -131,22 +144,21 @@ public class Logger implements Runnable {
 
             if (obj==null) return;
 
+
+          //Unpack data
             Object[] arr = (Object[]) obj;
-            Long t = (Long) arr[0];
+            Long timestamp = (Long) arr[0];
             String action = (String) arr[1];
             String type = (String) arr[2];
-            String data = (String) arr[3];
+            JSONArray data = (JSONArray) arr[3];
             String user = (String) arr[4];
 
-
-            String msg = t + "," + action + "," + type + "," + data + "," + user;
-            console.log(msg);
 
 
           //Log info to a file
             if (logDir!=null){
                 try{
-                    String str = msg + "\r\n";
+                    String str = timestamp + "," + action + "," + type + "," + data + "," + user + "\r\n";
                     byte[] b = str.getBytes();
                     ByteBuffer output = ByteBuffer.allocateDirect(b.length);
                     output.put(b);
@@ -161,17 +173,29 @@ public class Logger implements Runnable {
 
           //Post info to a webserver
             if (webconfig!=null){
-                String url = webconfig.get("url").toString();
-                if (url!=null){
-                    javaxt.http.Request request = new javaxt.http.Request(url);
-                    String username = webconfig.get("username").toString();
-                    String password = webconfig.get("password").toString();
-                    if (username!=null && password!=null){
-                        request.setCredentials(username, password);
+                try{
+                    JSONArray msg = new JSONArray();
+                    msg.add(timestamp);
+                    msg.add(action);
+                    msg.add(type);
+                    msg.add(data);
+                    msg.add(user);
+
+                    String url = webconfig.get("url").toString();
+                    if (url!=null){
+                        javaxt.http.Request request = new javaxt.http.Request(url);
+                        String username = webconfig.get("username").toString();
+                        String password = webconfig.get("password").toString();
+                        if (username!=null && password!=null){
+                            request.setCredentials(username, password);
+                        }
+                        request.setRequestMethod("POST");
+                        request.setNumRedirects(0);
+
+                        request.write(msg.toString());
                     }
-                    request.setRequestMethod("POST");
-                    request.setNumRedirects(0);
-                    request.write(msg);
+                }
+                catch(Exception e){
                 }
             }
 
@@ -188,13 +212,13 @@ public class Logger implements Runnable {
                     "VALUES (?, ?, ?, ?, ?)");
 
                     Clob clob = c.createClob();
-                    clob.setString(1, data);
+                    clob.setString(1, data.toString());
 
                     preparedStatement.setString(1, action);
                     preparedStatement.setString(2, type);
                     preparedStatement.setClob(3, clob);
                     preparedStatement.setString(4, user);
-                    preparedStatement.setLong(5, t);
+                    preparedStatement.setLong(5, timestamp);
                     preparedStatement.executeUpdate();
                     preparedStatement.close();
 
