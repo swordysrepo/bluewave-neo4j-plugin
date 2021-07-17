@@ -12,6 +12,7 @@ import org.neo4j.graphdb.event.TransactionEventListener;
 import org.neo4j.logging.internal.LogService;
 
 import java.util.*;
+import javaxt.json.JSONArray;
 import javaxt.json.JSONObject;
 import static javaxt.utils.Console.console;
 
@@ -84,9 +85,8 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
         }
 
 
-        console.log("starting logger...");
+        //console.log("starting logger...");
         new Thread(logger).start();
-
     }
 
 
@@ -129,42 +129,42 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
         Iterable<LabelEntry> assignedLabels = data.assignedLabels();
         if (assignedLabels!=null) {
             Iterator<LabelEntry> it = assignedLabels.iterator();
-            if (it.hasNext()) logger.log("create","labels","",user);
+            if (it.hasNext()) logger.log("create","labels",getLabelInfo(it),user);
         }
 
 
         Iterable<LabelEntry> removedLabels = data.assignedLabels();
         if (removedLabels!=null) {
             Iterator<LabelEntry> it = removedLabels.iterator();
-            if (it.hasNext()) logger.log("delete","labels","",user);
+            if (it.hasNext()) logger.log("delete","labels",getLabelInfo(it),user);
         }
 
 
         Iterable<PropertyEntry<Node>> assignedNodeProperties = data.assignedNodeProperties();
         if (assignedNodeProperties!=null) {
             Iterator<PropertyEntry<Node>> it = assignedNodeProperties.iterator();
-            if (it.hasNext()) logger.log("create","properties","",user);
+            if (it.hasNext()) logger.log("create","properties",getPropertyInfo(it),user);
         }
 
 
         Iterable<PropertyEntry<Node>> removedNodeProperties = data.removedNodeProperties();
         if (removedNodeProperties!=null) {
             Iterator<PropertyEntry<Node>> it = removedNodeProperties.iterator();
-            if (it.hasNext()) logger.log("delete","properties","",user);
+            if (it.hasNext()) logger.log("delete","properties",getPropertyInfo(it),user);
         }
 
 
         Iterable<PropertyEntry<Relationship>> assignedRelationshipProperties = data.assignedRelationshipProperties();
         if (assignedRelationshipProperties!=null) {
             Iterator<PropertyEntry<Relationship>> it = assignedRelationshipProperties.iterator();
-            if (it.hasNext()) logger.log("create","relationship_property","",user);
+            if (it.hasNext()) logger.log("create","relationship_property",getRelationshipPropertyInfo(it),user);
         }
 
 
         Iterable<PropertyEntry<Relationship>> removedRelationshipProperties = data.removedRelationshipProperties();
         if (removedRelationshipProperties!=null) {
             Iterator<PropertyEntry<Relationship>> it = removedRelationshipProperties.iterator();
-            if (it.hasNext()) logger.log("delete","relationship_property","",user);
+            if (it.hasNext()) logger.log("delete","relationship_property",getRelationshipPropertyInfo(it),user);
         }
 
         return null;
@@ -190,15 +190,15 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
   //** getNodeInfo
   //**************************************************************************
-    private String getNodeInfo(Iterator<Node> it){
-        StringBuilder str = new StringBuilder("[");
+    private JSONArray getNodeInfo(Iterator<Node> it){
+        JSONArray arr = new JSONArray();
 
         try{
             while(it.hasNext()){
-                str.append("[");
+                JSONArray entry = new JSONArray();
                 Node node = it.next();
                 Long nodeID = node.getId();
-                str.append(nodeID);
+                entry.add(nodeID);
 
                 Iterable<Label> labels = node.getLabels();
                 if (labels!=null){
@@ -206,39 +206,54 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
                     while (i2.hasNext()){
                         String label = i2.next().name();
                         if (label!=null){
-                            str.append(",");
-                            str.append(label);
+                            entry.add(label);
                         }
                     }
                 }
-                str.append("]");
-                if (it.hasNext()) str.append(",");
+
+                arr.add(entry);
             }
         }
         catch(Exception e){
             console.log(e.getMessage());
         }
 
-
-        str.append("]");
-        return str.toString();
+        return arr;
     }
 
 
   //**************************************************************************
   //** getRelationshipInfo
   //**************************************************************************
-    private String getRelationshipInfo(Iterator<Relationship> it){
-        StringBuilder str = new StringBuilder();
-        return str.toString();
+    private JSONArray getRelationshipInfo(Iterator<Relationship> it){
+        JSONArray arr = new JSONArray();
+        return arr;
     }
 
 
   //**************************************************************************
-  //** getRelationshipInfo
+  //** getLabelInfo
   //**************************************************************************
-    private String getPropertyInfo(Iterator<Relationship> it){
-        StringBuilder str = new StringBuilder();
-        return str.toString();
+    private JSONArray getLabelInfo(Iterator<LabelEntry> it){
+        JSONArray arr = new JSONArray();
+        return arr;
+    }
+
+
+  //**************************************************************************
+  //** getPropertyInfo
+  //**************************************************************************
+    private JSONArray getPropertyInfo(Iterator<PropertyEntry<Node>> it){
+        JSONArray arr = new JSONArray();
+        return arr;
+    }
+
+
+  //**************************************************************************
+  //** getRelationshipPropertyInfo
+  //**************************************************************************
+    private JSONArray getRelationshipPropertyInfo(Iterator<PropertyEntry<Relationship>> it){
+        JSONArray arr = new JSONArray();
+        return arr;
     }
 }
