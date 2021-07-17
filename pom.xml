@@ -18,7 +18,17 @@
   <!-- =========================================================== -->
   <!--     Dependency Management                                   -->
   <!-- =========================================================== -->
+    <repositories>
+
+        <!--Add javaxt maven repo-->
+        <repository>
+            <id>javaxt.com</id>
+            <url>https://www.javaxt.com/maven</url>
+        </repository>
+
+    </repositories>
     <dependencies>
+
         <!-- https://mvnrepository.com/artifact/org.neo4j/neo4j -->
         <dependency>
             <groupId>org.neo4j</groupId>
@@ -42,6 +52,13 @@
             <version>1.4.199</version>
         </dependency>
 
+
+        <!-- JavaXT (file and database utils) -->
+        <dependency>
+          <groupId>javaxt</groupId>
+          <artifactId>javaxt-core</artifactId>
+          <version>1.10.6</version>
+        </dependency>
 
     </dependencies>
 
