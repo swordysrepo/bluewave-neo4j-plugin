@@ -1,195 +1,259 @@
 package bluewave.neo4j.plugins;
 
-import com.google.gson.Gson;
-import org.h2.jdbc.JdbcClob;
-import org.h2.tools.Server;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.event.PropertyEntry;
+import org.neo4j.graphdb.event.LabelEntry;
 import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.graphdb.event.TransactionEventListener;
 import org.neo4j.logging.internal.LogService;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.*;
+import javaxt.json.JSONArray;
+import javaxt.json.JSONObject;
+import static javaxt.utils.Console.console;
+
 
 public class Neo4JTransactionEventListener implements TransactionEventListener<Object> {
-    GraphDatabaseService db;
-    LogService log;
 
-    long transactionId;
-    long commitTime;
-    String type;
-    TransactionType transactionType = TransactionType.NONE;
-    String tableName;
-    String insertQuery;
-    String nodeName = "";
-    String labelName = "";
-    String relName = "";
-    String propName = "";
-    String propValue = "";
-    String url = "jdbc:h2:~/h2test;AUTO_SERVER=TRUE;";
-    String user = "sa";
-    String passwd = "password";
-    int index =0;
-    String dataString = "";
+    private Logger logger;
+    private javaxt.io.File configFile;
 
 
+  //**************************************************************************
+  //** Constructor
+  //**************************************************************************
+    public Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService, final LogService logsvc){
 
-    public Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService, final LogService logsvc)
-    {
-        this.db = graphDatabaseService;
-        this.log = logsvc;
-        this.tableName = "transaction";
-        this.insertQuery = "INSERT INTO ";
+      //Find the config file
+        javaxt.io.Jar jar = new javaxt.io.Jar(this);
+        java.io.File pluginDir = jar.getFile().getParentFile();
+        configFile = new javaxt.io.File(pluginDir, "config.json");
 
 
+      //Parse the config file
+        JSONObject config = null;
+        try{
+            config = new JSONObject(configFile.getText());
+        }
+        catch(Exception e){
+            console.log(e.getMessage());
+            return;
+        }
+
+
+      //Instantiate logger
+        logger = new Logger();
+
+
+      //Set path to the log file directory
+        try{
+            javaxt.io.Directory logDir = new javaxt.io.Directory(config.get("logger").get("path").toString());
+            logger.setDirectory(logDir);
+        }
+        catch(Exception e){
+        }
+
+
+      //Initialize database
+        try{
+            JSONObject json = config.get("database").toJSONObject();
+            String path = json.get("path").toString().replace("\\", "/");
+            javaxt.io.Directory dbDir = new javaxt.io.Directory(path);
+            dbDir.create();
+            path = new java.io.File(dbDir.toString()+"database").getCanonicalPath();
+
+            javaxt.sql.Database database = new javaxt.sql.Database();
+            database.setDriver("H2");
+            database.setHost(path);
+            database.setConnectionPoolSize(25);
+            logger.setDatabase(database);
+        }
+        catch(Exception e){
+
+        }
+
+
+      //Get webserver config
+        try{
+            logger.setWebServer(config.get("webserver").toJSONObject());
+        }
+        catch(Exception e){
+        }
+
+
+        //console.log("starting logger...");
+        new Thread(logger).start();
     }
-    public Object beforeCommit(final TransactionData data, final Transaction transaction, final GraphDatabaseService databaseService) throws Exception
-    {
 
-        String createQuery = "CREATE TABLE IF NOT EXISTS transaction( " +
-                "id bigint auto_increment, " +
-                "data clob, " +
-                "commitTime LONG, " +
-                "transactionID LONG);";
 
-        try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
-            Statement st = testCon.createStatement();
-            st.executeUpdate(createQuery);
-        } catch (SQLException e) {
-            e.printStackTrace();
+  //**************************************************************************
+  //** beforeCommit
+  //**************************************************************************
+    public Object beforeCommit(final TransactionData data, final Transaction transaction,
+        final GraphDatabaseService databaseService) throws Exception {
+        if (logger==null) return null;
+        String user = data.username();
+
+        Iterable<Node> createdNodes = data.createdNodes();
+        if (createdNodes!=null) {
+            Iterator<Node> it = createdNodes.iterator();
+            if (it.hasNext()) logger.log("create","nodes",getNodeInfo(it),user);
         }
 
 
-        if (data.createdNodes() != null) {
-            type = "NODE";
-            transactionType = TransactionType.CREATION;
-
-            dataString += "Created Nodes | " + data.createdNodes() + " | ";
-            
+        Iterable<Node> deletedNodes = data.deletedNodes();
+        if (data.deletedNodes()!=null) {
+            Iterator<Node> it = deletedNodes.iterator();
+            if (it.hasNext()) logger.log("delete","nodes",getNodeInfo(it),user);
         }
-        if (data.deletedNodes() != null) {
-            type = "NODE";
-            transactionType = TransactionType.DELETION;
 
-            dataString += "Deleted Nodes | " + data.deletedNodes() + " | ";
+
+        Iterable<Relationship> createdRelationships = data.createdRelationships();
+        if (createdRelationships!=null) {
+            Iterator<Relationship> it = createdRelationships.iterator();
+            if (it.hasNext()) logger.log("create","relationships",getRelationshipInfo(it),user);
         }
-        if (data.createdRelationships() != null) {
 
-            type = "RELATIONSHIP";
-            transactionType = TransactionType.CREATION;
 
-            dataString += "Created Relationships | " + data.createdRelationships() + " | ";
+        Iterable<Relationship> deletedRelationships = data.deletedRelationships();
+        if (data.deletedRelationships()!=null) {
+            Iterator<Relationship> it = deletedRelationships.iterator();
+            if (it.hasNext()) logger.log("delete","relationships",getRelationshipInfo(it),user);
         }
-        if (data.deletedRelationships() != null) {
 
-            type = "RELATIONSHIP";
-            transactionType = TransactionType.DELETION;
 
-            dataString += "Deleted Relationships | " + data.deletedRelationships() + " | ";
-
+        Iterable<LabelEntry> assignedLabels = data.assignedLabels();
+        if (assignedLabels!=null) {
+            Iterator<LabelEntry> it = assignedLabels.iterator();
+            if (it.hasNext()) logger.log("create","labels",getLabelInfo(it),user);
         }
-        if (data.assignedLabels() != null) {
 
-            type = "LABEL";
-            transactionType = TransactionType.LABEL_ASSIGNMENT;
 
-            dataString += "Assigned Labels | " + data.assignedLabels() + " | ";
+        Iterable<LabelEntry> removedLabels = data.assignedLabels();
+        if (removedLabels!=null) {
+            Iterator<LabelEntry> it = removedLabels.iterator();
+            if (it.hasNext()) logger.log("delete","labels",getLabelInfo(it),user);
         }
-        if (data.removedLabels() != null) {
-            type = "LABEL";
-            transactionType = TransactionType.LABEL_REMOVAL;
 
-            dataString += "Removed Labels | " + data.removedLabels() + " | ";
+
+        Iterable<PropertyEntry<Node>> assignedNodeProperties = data.assignedNodeProperties();
+        if (assignedNodeProperties!=null) {
+            Iterator<PropertyEntry<Node>> it = assignedNodeProperties.iterator();
+            if (it.hasNext()) logger.log("create","properties",getPropertyInfo(it),user);
         }
-        if (data.assignedNodeProperties() != null) {
 
-            transactionType = TransactionType.PROPERTY_ASSIGNMENT;
-            type = "NODE";
 
-            dataString += "Assigned Node Properties | " + data.assignedNodeProperties().toString() + " | ";
-
+        Iterable<PropertyEntry<Node>> removedNodeProperties = data.removedNodeProperties();
+        if (removedNodeProperties!=null) {
+            Iterator<PropertyEntry<Node>> it = removedNodeProperties.iterator();
+            if (it.hasNext()) logger.log("delete","properties",getPropertyInfo(it),user);
         }
-        if (data.removedNodeProperties() != null) {
 
-            transactionType = TransactionType.PROPERTY_REMOVAL;
-            type = "NODE";
 
-            dataString += "Removed Node Properties | " + data.removedNodeProperties().toString() + " | ";
-
+        Iterable<PropertyEntry<Relationship>> assignedRelationshipProperties = data.assignedRelationshipProperties();
+        if (assignedRelationshipProperties!=null) {
+            Iterator<PropertyEntry<Relationship>> it = assignedRelationshipProperties.iterator();
+            if (it.hasNext()) logger.log("create","relationship_property",getRelationshipPropertyInfo(it),user);
         }
-        if (data.assignedRelationshipProperties() != null) {
 
-            transactionType = TransactionType.PROPERTY_ASSIGNMENT;
-            type = "RELATIONSHIP";
 
-            dataString += "Assigned Relationship Properties | " + data.assignedRelationshipProperties().toString() + " | ";
-
-        }
-        if (data.removedRelationshipProperties() != null) {
-
-            transactionType = TransactionType.PROPERTY_REMOVAL;
-            type = "RELATIONSHIP";
-
-            dataString += "Removed Relationship Properties | " + data.removedRelationshipProperties().toString() + " | ";
-
+        Iterable<PropertyEntry<Relationship>> removedRelationshipProperties = data.removedRelationshipProperties();
+        if (removedRelationshipProperties!=null) {
+            Iterator<PropertyEntry<Relationship>> it = removedRelationshipProperties.iterator();
+            if (it.hasNext()) logger.log("delete","relationship_property",getRelationshipPropertyInfo(it),user);
         }
 
         return null;
-
     }
-    public void afterCommit(final TransactionData data, final Object state, final GraphDatabaseService databaseService)
-
-    {
-
-        String createQuery = "CREATE TABLE IF NOT EXISTS transaction( " +
-                "id NOT NULL PRIMARY KEY, " +
-                "data clob, " +
-                "commitTime LONG, " +
-                "transactionID LONG);";
 
 
-        try {
-            commitTime = data.getCommitTime();
-            dataString += "Commit Time | " + data.getCommitTime() + " | ";
+  //**************************************************************************
+  //** afterCommit
+  //**************************************************************************
+    public void afterCommit(final TransactionData data, final Object state,
+        final GraphDatabaseService databaseService){
+    }
 
-            transactionId = data.getTransactionId();
 
-            dataString += "Transaction ID | " + data.getTransactionId() + " | ";
+  //**************************************************************************
+  //** afterRollback
+  //**************************************************************************
+    public void afterRollback(final TransactionData data, final Object state,
+        final GraphDatabaseService databaseService){
+    }
 
 
-            // Need to allow for multiple connections simultaneously
-            try (Connection testCon = DriverManager.getConnection(url, user, passwd)) {
+  //**************************************************************************
+  //** getNodeInfo
+  //**************************************************************************
+    private JSONArray getNodeInfo(Iterator<Node> it){
+        JSONArray arr = new JSONArray();
 
-                PreparedStatement preparedStatement = testCon.prepareStatement("INSERT INTO TRANSACTION ( data, commitTime, transactionId) VALUES (?, ?, ?)");
+        try{
+            while(it.hasNext()){
+                JSONArray entry = new JSONArray();
+                Node node = it.next();
+                Long nodeID = node.getId();
+                entry.add(nodeID);
 
-                Clob clob = testCon.createClob();
+                Iterable<Label> labels = node.getLabels();
+                if (labels!=null){
+                    Iterator<Label> i2 = labels.iterator();
+                    while (i2.hasNext()){
+                        String label = i2.next().name();
+                        if (label!=null){
+                            entry.add(label);
+                        }
+                    }
+                }
 
-                clob.setString(1, dataString);
-                preparedStatement.setClob(1, clob);
-                preparedStatement.setLong(2, data.getCommitTime());
-                preparedStatement.setLong(3, data.getTransactionId());
-                preparedStatement.executeUpdate();
-                preparedStatement.close();
-
+                arr.add(entry);
             }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
         }
+        catch(Exception e){
+            console.log(e.getMessage());
+        }
+
+        return arr;
     }
-    public void afterRollback(final TransactionData data, final Object state, final GraphDatabaseService databaseService)
-    {
+
+
+  //**************************************************************************
+  //** getRelationshipInfo
+  //**************************************************************************
+    private JSONArray getRelationshipInfo(Iterator<Relationship> it){
+        JSONArray arr = new JSONArray();
+        return arr;
+    }
+
+
+  //**************************************************************************
+  //** getLabelInfo
+  //**************************************************************************
+    private JSONArray getLabelInfo(Iterator<LabelEntry> it){
+        JSONArray arr = new JSONArray();
+        return arr;
+    }
+
+
+  //**************************************************************************
+  //** getPropertyInfo
+  //**************************************************************************
+    private JSONArray getPropertyInfo(Iterator<PropertyEntry<Node>> it){
+        JSONArray arr = new JSONArray();
+        return arr;
+    }
+
+
+  //**************************************************************************
+  //** getRelationshipPropertyInfo
+  //**************************************************************************
+    private JSONArray getRelationshipPropertyInfo(Iterator<PropertyEntry<Relationship>> it){
+        JSONArray arr = new JSONArray();
+        return arr;
     }
 }
