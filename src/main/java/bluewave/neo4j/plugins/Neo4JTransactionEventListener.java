@@ -176,6 +176,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     public void afterCommit(final TransactionData data, final Object state,
         final GraphDatabaseService databaseService){
+            new Metadata(databaseService, data);
     }
 
 
