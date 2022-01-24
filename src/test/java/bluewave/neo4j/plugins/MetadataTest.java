@@ -3,6 +3,7 @@ package bluewave.neo4j.plugins;
 import static javaxt.utils.Console.console;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -28,45 +29,182 @@ import org.neo4j.harness.Neo4jBuilders;
 import javaxt.json.JSONArray;
 import javaxt.json.JSONObject;
 
-/**
- * Tests needed
- * *************
- * *************
- * 
- * Add nodes with labels and properties - COMPLETED -
- * -> test_Delete_All_Nodes_With_Specific_Label()
- * ------------------------------
- * Delete nodes with labels and properties - COMPLETED -
- * -> test_Delete_All_Nodes_With_Specific_Label()
- * ------------------------------
- * Add property to node with existing properties - COMPLETED -
- * -> test_Add_Property_To_All_Nodes_With_Specific_Label()
- * ------------------------------
- * Delete existing property - COMPLETED -
- * -> test_Delete_Property_From_All_Nodes_With_Specific_Label()
- * ------------------------------
- * Update property value - COMPLETED -
- * -> test_Update_Property_Value_From_All_Nodes_With_Specific_Label()
- * ------------------------------
- * Add label to existing node - COMPLETED -
- * -> test_Add_Label_To_Existing_Node()
- * ------------------------------
- * Delete existing label
- * -> test_Delete_Existing_Label() - COMPLETED -
- * ------------------------------
- * 
- * 
- * Cleanup
- */
-
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class MetadataTest {
-
+    public static final String GET_BLUEWAVE_METADATA_NODE_SQL = "MATCH (n:bluewave_metadata) return n";
     private static final Config driverConfig = Config.builder().withoutEncryption().build();
     private static Driver driver;
     private Neo4j embeddedDatabaseServer;
 
     @Test
+    public void test_Delete_Relationship_To_Existing_Node() {
+        console.log("********************************************************************************");
+        console.log("***************************** NEW TEST *****************************************");
+        console.log("**                                                                            **");
+        console.log("** test_Delete_Relationship_To_Existing_Node()                                **");
+        console.log("**                                                                            **");
+        console.log("**                                                                            **");
+
+        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+        /**
+         * Confirm test data was added
+         */
+        console.log("** Test data loaded.");
+        printResultsToConsole(dbService);
+
+        /**
+         * Need to create the relationships first
+         */
+        final String updateSql = "MATCH (s:TESTNODE), (e:TESTLABEL ) CREATE (s)-[r:FRIENDS]->(e) return r";
+
+        console.log("** Create the relationships");
+        console.log("** " + updateSql);
+
+        /**
+         * Update
+         */
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute(updateSql);
+            tx.commit();
+        } catch (Exception e) {
+            fail("ERROR: Failed creating relationships: " + e);
+        }
+
+        printResultsToConsole(dbService);
+
+        /**
+         * Confirm additional label 'NEWLABEL' on nodes with :TESTNODE.
+         */
+        try (Transaction tx = dbService.beginTx()) {
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
+
+            assertTrue(result.hasNext());
+            Map<String, Object> record = result.next();
+            Node metaNode = (Node) record.get("n");
+            Predicate<Object> hasTESTLABEL = l -> String.valueOf(l).equals("TESTLABEL");
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            countsJSONObject.keySet().forEach(key -> {
+                JSONArray labels = countsJSONObject.get(key).get(Metadata.INDEX_LABELS).toJSONArray();
+                boolean isTESTLABELPresent = StreamSupport
+                        .stream(labels.spliterator(), false)
+                        .filter(hasTESTLABEL)
+                        .collect(Collectors.toList())
+                        .size() > 0;
+
+                long relations = countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong();
+                if (isTESTLABELPresent) {
+                    assertTrue(relations == 2);
+                } else {
+                    assertTrue(relations == 0);
+                }
+            });
+
+        } catch (Exception e) {
+            fail("ERROR -> " + e.toString());
+        }
+
+        /**
+         * Now that we created and confirmed the relationships, let's delete them
+         */
+
+        final String deleteSql = "MATCH (s:TESTNODE)-[r:FRIENDS]->() DELETE r";
+
+        console.log("** Delete the relationships. (This should remove all of them)");
+        console.log("** " + deleteSql);
+
+        /**
+         * Delete
+         */
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute(deleteSql);
+            tx.commit();
+        } catch (Exception e) {
+            fail("ERROR: Failed deleting relationships: " + e);
+        }
+
+        /**
+         * Confirm relationships have all been zero'd out
+         */
+        try (Transaction tx = dbService.beginTx()) {
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
+
+            assertTrue(result.hasNext());
+            Map<String, Object> record = result.next();
+            Node metaNode = (Node) record.get("n");
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            countsJSONObject.keySet().forEach(key -> {
+                assertTrue(countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong() == 0);
+            });
+
+        } catch (Exception e) {
+            fail("ERROR -> " + e.toString());
+        }
+    }
+
+   // @Test
+    public void test_Add_Relationship_To_Existing_Node() {
+        console.log("********************************************************************************");
+        console.log("***************************** NEW TEST *****************************************");
+        console.log("**                                                                            **");
+        console.log("** test_Add_Relationship_To_Existing_Node()                                   **");
+        console.log("**                                                                            **");
+        console.log("**                                                                            **");
+
+        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+        /**
+         * Confirm test data was added
+         */
+        console.log("** Test data loaded.");
+        printResultsToConsole(dbService);
+
+        final String updateSql = "MATCH (s:TESTNODE), (e:TESTLABEL ) CREATE (s)-[r:FRIENDS]->(e) return r";
+
+        console.log("** Add Label To Existing Nodes With LABEL 'TESTNODE' (No change in meta node should occur)");
+        console.log("** " + updateSql);
+
+        /**
+         * Update
+         */
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute(updateSql);
+            tx.commit();
+        } catch (Exception e) {
+
+        }
+
+        /**
+         * Confirm additional label 'NEWLABEL' on nodes with :TESTNODE.
+         */
+        try (Transaction tx = dbService.beginTx()) {
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
+
+            assertTrue(result.hasNext());
+            Map<String, Object> record = result.next();
+            Node metaNode = (Node) record.get("n");
+            Predicate<Object> hasTESTLABEL = l -> String.valueOf(l).equals("TESTLABEL");
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            countsJSONObject.keySet().forEach(key -> {
+                JSONArray labels = countsJSONObject.get(key).get(Metadata.INDEX_LABELS).toJSONArray();
+                boolean isTESTLABELPresent = StreamSupport
+                        .stream(labels.spliterator(), false)
+                        .filter(hasTESTLABEL)
+                        .collect(Collectors.toList())
+                        .size() > 0;
+
+                long relations = countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong();
+                if (isTESTLABELPresent) {
+                    assertTrue(relations == 2);
+                } else {
+                    assertTrue(relations == 0);
+                }
+            });
+
+        } catch (Exception e) {
+            fail("ERROR -> " + e.toString());
+        }
+    }
+
+    // @Test
     public void test_Delete_Existing_Label() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -93,19 +231,20 @@ public class MetadataTest {
             tx.execute(deleteSql);
             tx.commit();
         } catch (Exception e) {
-
+            fail("Error: " + e);
         }
 
         /**
          * Confirm nodes have changed.
          */
         try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
 
             assertTrue(result.hasNext());
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
-            JSONObject jsonObjectForDataProperty = new JSONObject(metaNode.getProperty("data").toString());
+            // JSONObject jsonObjectForDataProperty = new
+            // JSONObject(metaNode.getProperty("data").toString());
 
             /**
              * Let's verify the label has been removed.
@@ -114,10 +253,10 @@ public class MetadataTest {
             Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTLABEL");
             Predicate<Object> isTESTLABEL2Present = l -> String.valueOf(l).equals("TESTLABEL2");
 
-            JSONObject nodesJSONObject = jsonObjectForDataProperty.get("nodes").toJSONObject();
-            jsonObjectForDataProperty.get("nodes").toJSONObject().keys().forEachRemaining(key -> {
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            countsJSONObject.keySet().forEach(key -> {
 
-                JSONArray labels = nodesJSONObject.get(key).get("labels").toJSONArray();
+                JSONArray labels = countsJSONObject.get(key).get(Metadata.INDEX_LABELS).toJSONArray();
                 boolean hasTestLabel2 = StreamSupport
                         .stream(labels.spliterator(), false)
                         .filter(isTESTLABEL2Present)
@@ -135,235 +274,11 @@ public class MetadataTest {
             });
 
         } catch (Exception e) {
-            console.log("ERROR -> " + e.toString());
+            fail("ERROR -> " + e.toString());
         }
     }
 
-    @Test
-    public void test_Add_Label_To_Existing_Node() {
-        console.log("********************************************************************************");
-        console.log("***************************** NEW TEST *****************************************");
-        console.log("**                                                                            **");
-        console.log("** test_Add_Label_To_Existing_Node()                                          **");
-        console.log("**                                                                            **");
-        console.log("**                                                                            **");
-
-        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
-        /**
-         * Confirm test data was added
-         */
-        console.log("** Test data loaded.");
-        printResultsToConsole(dbService);
-
-        final String updateSql = "MATCH (n:TESTNODE) SET n :NEWLABEL return n";
-
-        console.log("** Add Label To Existing Nodes With LABEL 'TESTNODE' (No change in meta node should occur)");
-        console.log("** " + updateSql);
-
-        /**
-         * Update
-         */
-        try (Transaction tx = dbService.beginTx()) {
-            tx.execute(updateSql);
-            tx.commit();
-        } catch (Exception e) {
-
-        }
-
-        /**
-         * Confirm additional label 'NEWLABEL' on nodes with :TESTNODE.
-         */
-        try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
-
-            assertTrue(result.hasNext());
-            Map<String, Object> record = result.next();
-            Node metaNode = (Node) record.get("n");
-            JSONObject jsonObjectForDataProperty = new JSONObject(metaNode.getProperty("data").toString());
-
-            /**
-             * Let's verify the new label 'NEWLABEL' is found on the node with label
-             * 'TESTNODE'.
-             */
-
-            Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTNODE");
-            Predicate<Object> isNEWLABELPresent = l -> String.valueOf(l).equals("NEWLABEL");
-
-            JSONObject nodesJSONObject = jsonObjectForDataProperty.get("nodes").toJSONObject();
-            jsonObjectForDataProperty.get("nodes").toJSONObject().keys().forEachRemaining(key -> {
-
-                JSONArray labels = nodesJSONObject.get(key).get("labels").toJSONArray();
-                boolean hasLabelTESTNODE = StreamSupport
-                        .stream(labels.spliterator(), false)
-                        .filter(isTESTLABELPresent)
-                        .collect(Collectors.toList())
-                        .size() > 0;
-
-                boolean hasLabelNEWLABEL = StreamSupport
-                        .stream(labels.spliterator(), false)
-                        .filter(isNEWLABELPresent)
-                        .collect(Collectors.toList())
-                        .size() > 0;
-                if (hasLabelTESTNODE) {
-                    assertTrue(hasLabelNEWLABEL);
-                }
-            });
-        } catch (Exception e) {
-            console.log("ERROR -> " + e.toString());
-        }
-    }
-
-    @Test
-    public void test_Update_Property_Value_From_All_Nodes_With_Specific_Label() {
-        console.log("********************************************************************************");
-        console.log("***************************** NEW TEST *****************************************");
-        console.log("**                                                                            **");
-        console.log("** test_Update_Property_Value_From_All_Nodes_With_Specific_Label()            **");
-        console.log("**                                                                            **");
-        console.log("**                                                                            **");
-
-        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
-        /**
-         * Confirm test data was added
-         */
-        console.log("** Test data loaded.");
-        printResultsToConsole(dbService);
-
-        final String updateSql = "MATCH (n:TESTLABEL) SET n.prop1 = 'MUTABLE' return n";
-
-        console.log("** Update Property With All Nodes With LABEL 'TESTLABEL' (No change in meta node should occur)");
-        console.log("** " + updateSql);
-
-        /**
-         * Update
-         */
-        try (Transaction tx = dbService.beginTx()) {
-            tx.execute(updateSql);
-            tx.commit();
-        } catch (Exception e) {
-
-        }
-
-        /**
-         * Confirm nothing has changed.
-         */
-        try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
-
-            assertTrue(result.hasNext());
-            Map<String, Object> record = result.next();
-            Node metaNode = (Node) record.get("n");
-            JSONObject jsonObjectForDataProperty = new JSONObject(metaNode.getProperty("data").toString());
-
-            /**
-             * Let's verify the property 'prop1' is still present for the nodes containing
-             * 'TESTLABEL' label.
-             * This is testing for adverse effects. There should be no changes in the
-             * metadata node.
-             */
-
-            Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTLABEL");
-            Predicate<Object> isProp1Present = p -> String.valueOf(p).equals("prop1");
-
-            JSONObject nodesJSONObject = jsonObjectForDataProperty.get("nodes").toJSONObject();
-            jsonObjectForDataProperty.get("nodes").toJSONObject().keys().forEachRemaining(key -> {
-
-                boolean hasLabel = StreamSupport
-                        .stream(nodesJSONObject.get(key).get("labels").toJSONArray().spliterator(), false)
-                        .filter(isTESTLABELPresent)
-                        .collect(Collectors.toList())
-                        .size() > 0;
-
-                boolean hasProp1 = StreamSupport
-                        .stream(nodesJSONObject.get(key).get("properties").toJSONArray().spliterator(), false)
-                        .filter(isProp1Present)
-                        .collect(Collectors.toList())
-                        .size() > 0;
-                if (hasLabel) {
-                    assertTrue(hasProp1);
-                }
-            });
-        } catch (Exception e) {
-            console.log("ERROR -> " + e.toString());
-        }
-    }
-
-    @Test
-    public void test_Delete_Property_From_All_Nodes_With_Specific_Label() {
-        console.log("********************************************************************************");
-        console.log("***************************** NEW TEST *****************************************");
-        console.log("**                                                                            **");
-        console.log("** test_Delete_Property_From_All_Nodes_With_Specific_Label()                  **");
-        console.log("**                                                                            **");
-        console.log("**                                                                            **");
-        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
-        /**
-         * Confirm test data was added
-         */
-        console.log("** Test data loaded.");
-        printResultsToConsole(dbService);
-
-        final String deleteSql = "MATCH (n:TESTLABEL) REMOVE n.prop1 return n";
-
-        console.log("** Delete Property From All Nodes With LABEL 'TESTLABEL' ");
-        console.log("** " + deleteSql);
-
-        /**
-         * Delete
-         */
-        try (Transaction tx = dbService.beginTx()) {
-            tx.execute(deleteSql);
-            tx.commit();
-        } catch (Exception e) {
-
-        }
-
-        /**
-         * Confirm nodes have changed.
-         */
-        try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
-
-            assertTrue(result.hasNext());
-            Map<String, Object> record = result.next();
-            Node metaNode = (Node) record.get("n");
-            JSONObject jsonObjectForDataProperty = new JSONObject(metaNode.getProperty("data").toString());
-
-            /**
-             * Let's verify the property 'prop1' has been removed for the nodes containing
-             * 'TESTLABEL' label.
-             */
-
-            Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTLABEL");
-            Predicate<Object> isProp1Present = p -> String.valueOf(p).equals("prop1");
-
-            JSONObject nodesJSONObject = jsonObjectForDataProperty.get("nodes").toJSONObject();
-            jsonObjectForDataProperty.get("nodes").toJSONObject().keys().forEachRemaining(key -> {
-
-                boolean hasLabel = StreamSupport
-                        .stream(nodesJSONObject.get(key).get("labels").toJSONArray().spliterator(),
-                                false)
-                        .filter(isTESTLABELPresent)
-                        .collect(Collectors.toList())
-                        .size() > 0;
-
-                boolean hasProp1 = StreamSupport
-                        .stream(nodesJSONObject.get(key).get("properties").toJSONArray().spliterator(),
-                                false)
-                        .filter(isProp1Present)
-                        .collect(Collectors.toList())
-                        .size() > 0;
-                if (hasLabel) {
-                    assertFalse(hasProp1);
-                }
-            });
-
-        } catch (Exception e) {
-            console.log("ERROR -> " + e.toString());
-        }
-    }
-
-    @Test
+    // @Test
     public void test_Delete_All_Nodes_With_Specific_Label() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -390,14 +305,14 @@ public class MetadataTest {
             tx.execute(deleteSql);
             tx.commit();
         } catch (Exception e) {
-
+            fail("ERROR: " + e);
         }
 
         /**
          * Confirm nothing has changed.
          */
         try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
 
             assertTrue(result.hasNext());
             Map<String, Object> record = result.next();
@@ -421,18 +336,19 @@ public class MetadataTest {
                                 .isEmpty());
             });
         } catch (Exception e) {
-            console.log("ERROR -> " + e.toString());
+            fail("ERROR -> " + e.toString());
         }
     }
 
-    @Test
-    public void test_Add_Property_To_All_Nodes_With_Specific_Label() {
+    // @Test
+    public void test_Add_Label_To_Existing_Node() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
         console.log("**                                                                            **");
-        console.log("** test_Add_Property_To_All_Nodes_With_Specific_Label()                       **");
+        console.log("** test_Add_Label_To_Existing_Node()                                          **");
         console.log("**                                                                            **");
         console.log("**                                                                            **");
+
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
         /**
          * Confirm test data was added
@@ -440,9 +356,9 @@ public class MetadataTest {
         console.log("** Test data loaded.");
         printResultsToConsole(dbService);
 
-        final String updateSql = "MATCH (n:TESTLABEL) SET n.color = 'blue' return n";
+        final String updateSql = "MATCH (n:TESTNODE) SET n :NEWLABEL return n";
 
-        console.log("** Add Property to All Nodes With LABEL 'TESTLABEL' ");
+        console.log("** Add Label To Existing Nodes With LABEL 'TESTNODE' ");
         console.log("** " + updateSql);
 
         /**
@@ -452,54 +368,62 @@ public class MetadataTest {
             tx.execute(updateSql);
             tx.commit();
         } catch (Exception e) {
-
+            fail("ERROR: " + e);
         }
 
         /**
-         * Confirm nodes have changed with new property.
+         * Confirm additional label 'NEWLABEL' on nodes with :TESTNODE.
          */
         try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
 
             assertTrue(result.hasNext());
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
-            JSONObject jsonObjectForDataProperty = new JSONObject(metaNode.getProperty("data").toString());
 
             /**
-             * Let's verify the property 'color' has been added for the nodes containing
-             * 'TESTLABEL' label.
+             * Let's verify the new label 'NEWLABEL' is found on the node with label
+             * 'TESTNODE'.
              */
 
-            Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTLABEL");
-            Predicate<Object> isColorPropPresent = p -> String.valueOf(p).equals("color");
+            Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTNODE");
+            Predicate<Object> isNEWLABELPresent = l -> String.valueOf(l).equals("NEWLABEL");
 
-            JSONObject nodesJSONObject = jsonObjectForDataProperty.get("nodes").toJSONObject();
-            nodesJSONObject.keySet().forEach(key -> {
+            /**
+             * Example structure of counts in metadata
+             * (n:bluewave_metadata{"counts":{"534657143":[["label1","labeln"], 1, 15, 4,
+             * 2],"7989553324":[["label1","labeln"], 1, 13, 2, 3]}})
+             */
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            countsJSONObject.keySet().forEach(key -> {
 
-                JSONArray labels = nodesJSONObject.get(key).get("labels").toJSONArray();
-                boolean hasLabel = StreamSupport
+                JSONArray labels = countsJSONObject.get(key).toJSONArray().get(Metadata.INDEX_LABELS).toJSONArray();
+                boolean hasLabelTESTNODE = StreamSupport
                         .stream(labels.spliterator(), false)
                         .filter(isTESTLABELPresent)
                         .collect(Collectors.toList())
                         .size() > 0;
 
-                JSONArray properties = nodesJSONObject.get(key).get("properties").toJSONArray();
-                boolean hasColorProp = StreamSupport
-                        .stream(properties.spliterator(), false)
-                        .filter(isColorPropPresent)
+                boolean hasLabelNEWLABEL = StreamSupport
+                        .stream(labels.spliterator(), false)
+                        .filter(isNEWLABELPresent)
                         .collect(Collectors.toList())
                         .size() > 0;
 
-                if (hasLabel) {
-                    assertTrue(hasColorProp);
+                /**
+                 * Confirm is TESTNODE is present so it NEWLABEL
+                 * or
+                 * Confirm both TESTNODE and NEWLABEL are not present
+                 */
+                if (hasLabelTESTNODE) {
+                    assertTrue(hasLabelNEWLABEL);
                 } else {
-                    assertFalse(hasColorProp);
+                    assertFalse(hasLabelTESTNODE);
+                    assertFalse(hasLabelNEWLABEL);
                 }
             });
-
         } catch (Exception e) {
-            console.log("ERROR: " + e);
+            fail("ERROR -> " + e.toString());
         }
     }
 
@@ -515,53 +439,65 @@ public class MetadataTest {
          * one node with one label.
          */
         try (Transaction tx = dbService.beginTx()) {
-            Result result = tx.execute(Metadata.GET_BLUEWAVE_METADATA_NODE_SQL);
+            Result result = tx.execute(GET_BLUEWAVE_METADATA_NODE_SQL);
 
             assertTrue(result.hasNext());
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
 
-            console.log("** bluewave_metadata node contents: id: " + metaNode.getId()
-                    + ", data property: " + metaNode.getProperties("data").toString() + "\n");
+            console.log("** bluewave_metadata node contents: --properties--:> "
+                    + metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
+                    + "\n --counts--:> " + metaNode.getProperties(Metadata.KEY_COUNTS).toString() + "\n");
 
         } catch (Exception e) {
-            console.log("ERROR -> " + e);
+            fail("ERROR -> " + e);
         }
     }
 
     @BeforeEach
     void initializeNeo4j() {
+        try {
+            /**
+             * Load test data.
+             * 
+             */
+            final String createSql = "CREATE (n1{prop1:'val1'})," // One node with one property
+                    + " (n2:TESTNODE{prop1:'val1', prop2:'val2'})," // One node with a label and 2 properties
+                    + " (n3:TESTLABEL{prop1:'val1', prop2:'val2', prop3:'val3'}), " // One node with a label and 3
+                                                                                    // properties
+                    + " (n4:TESTLABEL:TESTLABEL3:TESTNODE{prop1:'val33', prop2:'val2', prop3:'val3'}), "
+                    + "(n5:TESTLABEL:TESTLABEL2{prop1:'val1', prop2:'val2', prop3:'val3', prop4:'val4'}) "; // One node
+                                                                                                            // with
+                                                                                                            // 2 labels
+                                                                                                            // and
+                                                                                                            // 4
+                                                                                                            // properties
 
-        /**
-         * Load dummy data.
-         * 
-         */
-        final String createSql = "CREATE (n1{prop1:'val1'})," // One node with one property
-                + " (n2:TESTNODE{prop1:'val1', prop2:'val2'})," // One node with a label and 2 properties
-                + " (n3:TESTLABEL{prop1:'val1', prop2:'val2', prop3:'val3'}), " // One node with a label and 3
-                                                                                // properties
-                + "(n4:TESTLABEL:TESTLABEL2{prop1:'val1', prop2:'val2', prop3:'val3', prop4:'val4'}) "; // One node with
-                                                                                                        // 2 labels and
-                                                                                                        // 4 properties
-        this.embeddedDatabaseServer = Neo4jBuilders.newInProcessBuilder()
-                .withDisabledServer()
-                .build();
+            this.embeddedDatabaseServer = Neo4jBuilders.newInProcessBuilder()
+                    .withDisabledServer()
+                    .build();
 
-        this.driver = GraphDatabase.driver(embeddedDatabaseServer.boltURI(), driverConfig);
-        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+            this.driver = GraphDatabase.driver(embeddedDatabaseServer.boltURI(), driverConfig);
+            GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
 
-        while (!dbService.isAvailable(500)) {
-            try {
-                TimeUnit.SECONDS.sleep(1);
-            } catch (Throwable t) {
+            while (!dbService.isAvailable(500)) {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (Throwable t) {
+                }
             }
-        }
 
-        try (Transaction tx = dbService.beginTx()) {
-            tx.execute(createSql);
-            tx.commit();
-        } catch (Exception e) {
-
+            try (Transaction tx = dbService.beginTx()) {
+                tx.execute(createSql);
+                tx.commit();
+                console.log("Initial data fill success. ");
+            } catch (Exception e) {
+                e.printStackTrace();
+                fail("Error: " + e);
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+            fail("Error: " + e);
         }
     }
 
@@ -581,12 +517,15 @@ public class MetadataTest {
         console.log("******** Ignore all errors below this statement, DB is in shutdown mode. *******\n\n");
         try (Session session = driver.session()) {
             session.run("MATCH (n) DETACH DELETE n");
+            session.close();
+        } catch (Exception e) {
+            console.log("ERROR: " + e);
+        } finally {
+            this.driver.close();
+            this.embeddedDatabaseServer.close();
+
+            // Reset Metadata flag
+            Metadata.metaNodeExist = false;
         }
-
-        this.driver.close();
-        this.embeddedDatabaseServer.close();
-
-        // Reset Metadata flag
-        Metadata.metaNodeExist = false;
     }
 }

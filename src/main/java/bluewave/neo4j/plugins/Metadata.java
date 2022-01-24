@@ -3,16 +3,20 @@ package bluewave.neo4j.plugins;
 import static javaxt.utils.Console.console;
 
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.StreamSupport;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.NotInTransactionException;
+import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.ResourceIterator;
+import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.event.LabelEntry;
 import org.neo4j.graphdb.event.PropertyEntry;
@@ -20,117 +24,140 @@ import org.neo4j.graphdb.event.TransactionData;
 
 import javaxt.json.JSONArray;
 import javaxt.json.JSONObject;
+import javaxt.json.JSONValue;
 
 public class Metadata {
 
+    public static final int BEFORE_COMMIT = 1;
+    public static final int AFTER_COMMIT = 2;
+
     public static final String META_NODE_LABEL = "bluewave_metadata";
-    public static final String GET_BLUEWAVE_METADATA_NODE_SQL = "MATCH (n:bluewave_metadata) return n";
+    public static final String KEY_COUNTS = "counts";
+    public static final String KEY_PROPERTIES = "properties";
+
     public static boolean metaNodeExist = false;
     private GraphDatabaseService db;
 
-    public Metadata(GraphDatabaseService databaseService, TransactionData data) {
+    public static final int INDEX_LABELS = 0;
+    public static final int INDEX_COUNT = 1;
+    public static final int INDEX_RELATIONS = 2;
+    public static final int INDEX_TRANSACTION_ID = 3;
+    public static final int INDEX_NODE_ID = 4;
+
+    List<DeletedNode> deletedNodes = new ArrayList<DeletedNode>();
+
+    public Metadata(GraphDatabaseService databaseService) {
         db = databaseService;
-        /**
-         * Must wait for an event before we create the metadata node because we do not
-         * know when the database will be ready for transactions.
-         */
-        if (!metaNodeExist) {
-            createMetadataNodeIfNotExist();
-        }
-        /**
-         * Process events
-         */
-        if (db.isAvailable(500)) {
-
-            try {
-                handleEvent(data);
-            } catch (Exception e) {
-                e("process event: " + e);
-            }
-
-        }
     }
 
-    public synchronized void createMetadataNodeIfNotExist() {
+    /**
+     * Create the metadata node if it doesn't exist
+     * 
+     */
+    public synchronized void init() {
 
         if (metaNodeExist)
             return;
 
+        metaNodeExist = true;
         Label label = Label.label(META_NODE_LABEL);
         List<Node> returnedNodes = new ArrayList<>();
+
         /**
          * Check if metadata node exists
          */
-        try (Transaction tx = db.beginTx()) {
-            tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
-        } catch (Exception e) {
-            e("createMetadataNodeIfNotExist findNodes: " + e);
+        while (!db.isAvailable(500)) {
+            try {
+                TimeUnit.SECONDS.sleep(1);
+            } catch (Throwable t) {
+            }
         }
+
+        try (Transaction tx = db.beginTx()) {
+            ResourceIterator<Node> nodesIterator = tx.findNodes(label);
+            if (nodesIterator.hasNext()) {
+                returnedNodes.add(nodesIterator.next());
+            }
+        } catch (Exception e) {
+            e("init findNodes: " + e);
+        }
+
         if (returnedNodes.isEmpty()) {
-            /**
-             * Metadata node does not exist.
-             * Retrieve all nodes and properties
-             */
-            String allNodesAndProperties = getAllNodesAndProperties();
             /**
              * Create the metadata node
              */
             try (Transaction tx = db.beginTx()) {
                 Node metadataNode = tx.createNode(label);
-                metadataNode.setProperty("data", allNodesAndProperties);
+                /**
+                 * Example structure of counts in metadata
+                 * (n:bluewave_metadata{"counts":{"534657143":[["label1","labeln"],15,
+                 * 4],"7989553324":[["label1","labeln"],13, 2]}})
+                 */
+                metadataNode.setProperty(KEY_COUNTS, executeNodesAndCountsQuery().toString());
+                /**
+                 * Example structure of properties in metadata
+                 * (n:bluewave_metadata{"properties":{"SOME_LABEL":["prop1","propn"],"SOME_LABEL2":[["prop1","propn"]}})
+                 */
+                metadataNode.setProperty(KEY_PROPERTIES, executeNodesAndPropertiesQuery().toString());
                 tx.commit();
                 metaNodeExist = true;
             } catch (Exception e) {
-                e("createMetadataNodeIfNotExist createNode:" + e);
+                e("init createNode:" + e);
             }
         }
     }
 
-    private String getAllNodesAndProperties() {
+    /**
+     * Example format of Nodes and Counts
+     * {"534657143":[["label1","labeln"],15, 4],"7989553324":[["label1","labeln"],13, 2]}
+     * 
+     * @return JSONObject of NodesAndCounts results
+     */
+    private JSONObject executeNodesAndCountsQuery() {
+        String query = "MATCH (n) RETURN distinct labels(n) as labels, count(labels(n)) as count, sum(size((n) <--())) as relations";
         /**
-         * Create json wrapper object
+         * Execute query
          */
-        JSONObject rootJSONObject = new JSONObject();
-        /**
-         * Create NODES array object
-         */
-        JSONObject nodesJSONObject = new JSONObject();
-        rootJSONObject.set("nodes", nodesJSONObject);
-
+        JSONObject containerOfCounts = new JSONObject();
         try (Transaction tx = db.beginTx()) {
-            ResourceIterator<Node> nodesIterator = tx.getAllNodes().iterator();
-            while (nodesIterator.hasNext()) {
-                Node tempNode = nodesIterator.next();
-                /**
-                 * Get Properties of each node
-                 */
-                JSONArray propertiesJSONArray = new JSONArray();
-                tempNode.getPropertyKeys().forEach((k) -> {
-                    propertiesJSONArray.add(k);
-                });
-
-                /**
-                 * Get Labels of each node
-                 */
-                JSONArray labelsJSONArray = new JSONArray();
-                tempNode.getLabels().forEach((l) -> {
-                    labelsJSONArray.add(l.name());
-                });
-
-                /**
-                 * Create each node
-                 */
-                JSONObject aNodeJSONObject = new JSONObject();
-                aNodeJSONObject.set("id", tempNode.getId());
-                aNodeJSONObject.set("labels", labelsJSONArray);
-                aNodeJSONObject.set("properties", propertiesJSONArray);
-                nodesJSONObject.set(tempNode.getId() + "", aNodeJSONObject);
+            Result rs = tx.execute(query);
+            while (rs.hasNext()) {
+                Map<String, Object> r = rs.next();
+                JSONArray labelValue = new JSONArray(r.get("labels").toString());
+                Set<String> labelSet = new HashSet<String>();
+                labelValue.forEach(l -> labelSet.add(l.toString()));
+                String nodeKey = String.valueOf(labelSet.hashCode());
+                Long countValue = Long.parseLong(r.get("count").toString());
+                Long relationsValue = Long.parseLong(r.get("relations").toString());
+                containerOfCounts.set(nodeKey, newNodesAndCountsObject(labelValue, countValue, relationsValue, 0, -1));
             }
-            tx.commit();
+            return containerOfCounts;
         } catch (Exception e) {
-            e("getAllNodesAndProperties : " + e);
+            e("executeNodesAndCountsQuery: " + e);
         }
-        return rootJSONObject.toString();
+        return null;
+    }
+
+    private JSONObject executeNodesAndPropertiesQuery() {
+        String query = "MATCH(n) WITH LABELS(n) AS labels , KEYS(n) AS keys UNWIND labels AS label UNWIND keys AS key RETURN DISTINCT label as nodes, COLLECT(DISTINCT key) AS properties ORDER BY label";
+        /**
+         * Execute query
+         */
+        JSONObject containerOfNodesAndProperties = new JSONObject();
+        try (Transaction tx = db.beginTx()) {
+            Result rs = tx.execute(query);
+            while (rs.hasNext()) {
+                // Get record
+                Map<String, Object> row = rs.next();
+                String labelValue = row.get("nodes").toString();
+                List<String> properties = (List<String>) row.get("properties");
+                containerOfNodesAndProperties.set(labelValue, properties);
+            }
+            return containerOfNodesAndProperties;
+        } catch (Exception e) {
+            e("executeNodesAndPropertiesQuery: " + e);
+        }
+        return null;
     }
 
     /**
@@ -181,56 +208,109 @@ public class Metadata {
             }
             tx.commit();
         } catch (Throwable e) {
-            p("saveBluewaveMeta_DataProperty: " + e);
+            e("saveBluewaveMeta_DataProperty: " + e);
+        }
+    }
+
+    private void saveBluewaveMeta_NodesAndCounts(JSONObject value) {
+        try (Transaction tx = db.beginTx()) {
+            Label label = Label.label(META_NODE_LABEL);
+            List<Node> returnedNodes = new ArrayList<>();
+            /**
+             * Get metadata node
+             */
+            tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
+            if (!returnedNodes.isEmpty()) {
+                Node node = returnedNodes.get(0);
+                node.setProperty(KEY_COUNTS, value.toString());
+            }
+            tx.commit();
+        } catch (Throwable e) {
+            e("saveBluewaveMeta_NodesAndCounts: " + e);
+        }
+    }
+
+    // private void saveBluewaveMeta_NodesAndProperties(String value) {
+    //     try (Transaction tx = db.beginTx()) {
+    //         Label label = Label.label(META_NODE_LABEL);
+    //         List<Node> returnedNodes = new ArrayList<>();
+    //         /**
+    //          * Get metadata node
+    //          */
+    //         tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
+    //         if (!returnedNodes.isEmpty()) {
+    //             Node node = returnedNodes.get(0);
+    //             node.setProperty(KEY_PROPERTIES, value.toString());
+    //         }
+    //         tx.commit();
+    //     } catch (Throwable e) {
+    //         e("saveBluewaveMeta_NodesAndProperties: " + e);
+    //     }
+    // }
+
+    // **************************************************************************
+    // ** handleEventBeforeCommit
+    // **************************************************************************
+    public void handleEventBeforeCommit(final TransactionData data) throws Exception {
+        // ***********************************************
+        // ** Deleted Nodes New
+        // ***********************************************
+        try {
+
+            if (data.deletedNodes() != null) {
+                data.deletedNodes().forEach(n -> {
+                    deletedNodesEventNew(n);
+                });
+            }
+        } catch (Exception e) {
+            e("deletedNodesEvent: calling forEach(): " + e);
+        }
+
+        // ***********************************************
+        // ** Deleted Relationships
+        // ***********************************************
+        try {
+            if (data.deletedRelationships() != null) {
+                data.deletedRelationships().forEach(n -> deletedRelationshipsEvent(n));
+            }
+        } catch (Exception e) {
+            e("deletedRelationshipsEvent: " + e);
         }
     }
 
     // **************************************************************************
-    // ** handleEvent
+    // ** handleEventAfterCommit
     // **************************************************************************
-    public synchronized void handleEvent(final TransactionData data) throws Exception {
+    public synchronized void handleEventAfterCommit(final TransactionData data) throws Exception {
 
         // ***********************************************
         // ** Created Nodes
         // ***********************************************
         try {
-            JSONArray newNodeIdsArray = new JSONArray();
-            try {
-                try (Transaction tx = db.beginTx()) {
+            Map<Long, Set<String>> nodeLabels = new HashMap<Long, Set<String>>();
 
-                    if (data.createdNodes() != null) {
-                        data.createdNodes().forEach(n -> newNodeIdsArray.add(n.getId()));
+            if (data.createdNodes() != null) {
+                /**
+                 * Process each new node
+                 */
+                data.createdNodes().forEach(n -> {
+                    Set<String> newNodesLabels = new HashSet<String>();
+                    Long nodeId = null;
+                    try (Transaction tx = db.beginTx()) {
+                        nodeId = n.getId();
+                        Node thisNode = tx.getNodeById(nodeId);
+                        thisNode.getLabels().forEach(l -> newNodesLabels.add(String.valueOf(l)));
+                        nodeLabels.put(nodeId, newNodesLabels);
+
+                    } catch (Exception te) {
+                        e("createNodesEventNew: calling getNodeById(): " + te);
                     }
-                }
-            } catch (NullPointerException npe) {
-                e("createNodesEvent: NPE: calling forEach(): " + npe);
-            }
-            if (!newNodeIdsArray.isEmpty()) {
-                p("createNodesEvent: " + newNodeIdsArray.toString());
-                createdNodesEvent(newNodeIdsArray);
+                });
+                nodeLabels.entrySet().forEach(e -> createdNodesEventNew(e.getKey(),
+                        e.getValue(), data.getTransactionId()));
             }
         } catch (Exception e) {
-            e("createNodesEvent: " + e);
-        }
-
-        // ***********************************************
-        // ** Deleted Nodes
-        // ***********************************************
-        try {
-            JSONArray deletedNodeIdsArray = new JSONArray();
-            try {
-                if (data.deletedNodes() != null) {
-                    data.deletedNodes().forEach(n -> deletedNodeIdsArray.add(n.getId()));
-                }
-            } catch (NullPointerException npe) {
-                e("deletedNodesEvent: NPE: calling foreach(): " + npe);
-            }
-            if (!deletedNodeIdsArray.isEmpty()) {
-                p("deletedNodesEvent: " + deletedNodeIdsArray.toString());
-                deletedNodesEvent(deletedNodeIdsArray);
-            }
-        } catch (Exception e) {
-            e("deletedNodesEvent: " + e);
+            e("createNodesEventNew: calling forEach(): " + e);
         }
 
         // ***********************************************
@@ -238,7 +318,7 @@ public class Metadata {
         // ***********************************************
         try {
             if (data.assignedLabels() != null) {
-                data.assignedLabels().forEach(n -> assignedLabelsEvent(n));
+                data.assignedLabels().forEach(n -> assignedLabelEventNew(n, data.getTransactionId()));
             }
         } catch (Exception e) {
             e("assignedLabelsEvent: " + e);
@@ -249,51 +329,62 @@ public class Metadata {
         // ***********************************************
         try {
             if (data.removedLabels() != null) {
-                data.removedLabels().forEach(n -> removedLabelEvent(n));
+                data.removedLabels().forEach(n -> removedLabelEventNew(n, data.getTransactionId()));
             }
         } catch (Exception e) {
             e("removedLabelEvent: " + e);
         }
 
         // ***********************************************
-        // ** Assigned Properties
+        // ** Created Relationships
         // ***********************************************
         try {
-            JSONArray assignedNodeProperties = new JSONArray();
-            if (data.assignedNodeProperties() != null) {
-                try {
-                    data.assignedNodeProperties().forEach(n -> assignedNodeProperties.add(n));
-                } catch (NullPointerException npe) {
-                    e("assignedNodeProperties: NPE: calling foreach(): " + npe);
-                }
-                if (!assignedNodeProperties.isEmpty()) {
-                    assignedNodeProperties.iterator()
-                            .forEachRemaining(n -> assignedNodePropertiesEvent((PropertyEntry<Node>) n));
-                }
+            if (data.createdRelationships() != null) {
+                data.createdRelationships().forEach(n -> createdRelationshipsEvent(n, data.getTransactionId()));
             }
         } catch (Exception e) {
-            e("assignedNodePropertiesEvent: " + e);
+            e("createdRelationshipsEvent: " + e);
         }
+
+        // ***********************************************
+        // ** Assigned Properties
+        // ***********************************************
+        // try {
+        // JSONArray assignedNodeProperties = new JSONArray();
+        // if (data.assignedNodeProperties() != null) {
+        // try {
+        // data.assignedNodeProperties().forEach(n -> assignedNodeProperties.add(n));
+        // } catch (NullPointerException npe) {
+        // e("assignedNodeProperties: NPE: calling foreach(): " + npe);
+        // }
+        // if (!assignedNodeProperties.isEmpty()) {
+        // assignedNodeProperties.iterator()
+        // .forEachRemaining(n -> assignedNodePropertiesEvent((PropertyEntry<Node>) n));
+        // }
+        // }
+        // } catch (Exception e) {
+        // e("assignedNodePropertiesEvent: " + e);
+        // }
 
         // ***********************************************
         // ** Removed Properties
         // ***********************************************
-        try {
-            JSONArray removedNodeProperties = new JSONArray();
-            if (data.removedNodeProperties() != null) {
-                try {
-                    data.removedNodeProperties().forEach(n -> removedNodeProperties.add(n));
-                } catch (NullPointerException npe) {
-                    e("removedNodeProperties: NPE: calling foreach(): " + npe);
-                }
-                if (!removedNodeProperties.isEmpty()) {
-                    removedNodeProperties.iterator()
-                            .forEachRemaining(n -> removedNodePropertiesEvent((PropertyEntry<Node>) n));
-                }
-            }
-        } catch (Exception e) {
-            e("removedNodePropertiesEvent: " + e);
-        }
+        // try {
+        // JSONArray removedNodeProperties = new JSONArray();
+        // if (data.removedNodeProperties() != null) {
+        // try {
+        // data.removedNodeProperties().forEach(n -> removedNodeProperties.add(n));
+        // } catch (NullPointerException npe) {
+        // e("removedNodeProperties: NPE: calling foreach(): " + npe);
+        // }
+        // if (!removedNodeProperties.isEmpty()) {
+        // removedNodeProperties.iterator()
+        // .forEachRemaining(n -> removedNodePropertiesEvent((PropertyEntry<Node>) n));
+        // }
+        // }
+        // } catch (Exception e) {
+        // e("removedNodePropertiesEvent: " + e);
+        // }
 
     }
 
@@ -310,246 +401,504 @@ public class Metadata {
     }
 
     // **************************************************************************
-    // ** createdNodesEvent
+    // ** createdNodesEvent NEW
     // **************************************************************************
-    private void createdNodesEvent(JSONArray newNodeIdsArray) {
+    private void createdNodesEventNew(Long nodeId, Set<String> newNodesLabels, Long txId) {
         /**
-         * Get bluewave_metadata node data
+         * Get bluewave_metadata
          */
         Long metaNodeId = null;
-        JSONObject jsonWrapperObject;
-        JSONObject metadataNodesJSONObject;
+        JSONObject metaCountsNode = null;
+        Node metaNode = null;
+        try (Transaction tx = db.beginTx()) {
+            metaNode = getMetadataNodeData(tx);
+            metaNodeId = metaNode.getId();
+            metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
+        } catch (Exception e) {
+            e("createdNodesEventNew:  foreach2: " + e);
+        }
+
+        /**
+         * Check for bluewave_metadata node
+         */
+        if (metaNodeId.longValue() == nodeId.longValue()) {
+            return;
+        }
+
+        /**
+         * Find entry in meta for this label set
+         */
+        JSONValue entry = null;
+        if (!(entry = metaCountsNode
+                .get(String.valueOf(newNodesLabels.hashCode()))).isNull()) {
+            /**
+             * Found entry in metadata, increment count
+             */
+            JSONArray entryValueArray = entry.toJSONArray();
+            Long counts = entryValueArray.get(INDEX_COUNT).toLong();
+            counts++;
+            entryValueArray.set(INDEX_TRANSACTION_ID, txId);
+            entryValueArray.set(INDEX_NODE_ID, nodeId);
+            metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), entryValueArray);
+        } else {
+            /**
+             * Create new node for counts
+             */
+            JSONArray labelsValue = new JSONArray();
+            newNodesLabels.iterator().forEachRemaining(l -> labelsValue.add(l));
+            metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()),
+                    newNodesAndCountsObject(labelsValue, 1, 0, txId, nodeId));
+        }
+
+        /**
+         * Save changes
+         */
+        saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+
+    }
+
+    // **************************************************************************
+    // ** deletedNodesEvent New
+    // **************************************************************************
+    private void deletedNodesEventNew(Node node) {
+        /**
+         * Get bluewave_metadata node data
+         * 
+         * Process:
+         * Get label(s) for node
+         * 
+         */
+        Long metaNodeId = null;
+        Long nodeId = node.getId();
+        JSONObject metaCountsNode = null;
         try (Transaction tx = db.beginTx()) {
             Node metaNode = getMetadataNodeData(tx);
             metaNodeId = metaNode.getId();
-            jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
-            metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
+            metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
         } catch (Exception e) {
-            e("createdNodesEvent getMetadataNodeData: " + e);
+            e("deletedNodesEventNew getMetadataNodeData: " + e);
             return;
         }
 
         boolean somethingToSave = false;
-        final Long metaId = metaNodeId;
+
         /**
-         * Create a new node for every id
+         * Check for bluewave_metadata node
          */
-        newNodeIdsArray.forEach(n -> {
-            /**
-             * Skip bluewave_metadata node
-             */
-            if (metaId.longValue() != ((Long) n).longValue()) {
+        if (metaNodeId.longValue() != nodeId.longValue()) {
+            try {
                 /**
-                 * Skip if node already exists
+                 * Gather all labels from this node
                  */
-                if (!metadataNodesJSONObject.has(n.toString())) {
-                    JSONObject newNode = newNode((Long) n);
-                    metadataNodesJSONObject.set(n.toString(), newNode);
+                Set<String> newNodesLabels = new HashSet<String>();
+                try (Transaction tx = db.beginTx()) {
+                    tx.getNodeById(nodeId).getLabels().forEach(l -> newNodesLabels.add(String.valueOf(l)));
+                } catch (Exception e) {
+                    e("deletedNodesEventNew get all labels: " + e);
+                    return;
                 }
+                JSONValue jsonArrayNodeCountsValue = null;
+                if ((jsonArrayNodeCountsValue = metaCountsNode
+                        .get(String.valueOf(newNodesLabels.hashCode()))) != null) {
+                    /**
+                     * Found node in metadata, decrement count
+                     */
+                    JSONArray jsonArrayNodeCounts = jsonArrayNodeCountsValue.toJSONArray();
+                    Long counts = jsonArrayNodeCounts.get(INDEX_COUNT).toLong();
+                    counts--;
+                    jsonArrayNodeCounts.set(INDEX_COUNT, counts);
+                    jsonArrayNodeCounts.set(INDEX_NODE_ID, node.getId());
+                    jsonArrayNodeCounts.set(INDEX_TRANSACTION_ID, -1);
+                    metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), jsonArrayNodeCounts);
+                    if (counts == 0) {
+                        metaCountsNode.remove(String.valueOf(newNodesLabels.hashCode()));
+                    }
+                    somethingToSave = true;
+                }
+            } catch (Exception e) {
+                e("deletedNodesEventNew: " + e);
             }
-        });
+        }
 
         if (somethingToSave) {
             /**
-             * Replace the nodes property with the new nodes json object
+             * Replace the counts property
              */
-            jsonWrapperObject.set("nodes", metadataNodesJSONObject);
-            saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
+            saveBluewaveMeta_NodesAndCounts(metaCountsNode);
         }
     }
 
     // **************************************************************************
-    // ** deletedNodesEvent
+    // ** removedLabelEvent NEW
     // **************************************************************************
-    public void deletedNodesEvent(JSONArray deletedNodeIdsArray) {
-        Iterator<Object> iterator = deletedNodeIdsArray.iterator();
-        while (iterator.hasNext()) {
-            try (Transaction tx = db.beginTx()) {
-                Long nodeId = (Long) iterator.next();
-                Node metaNode = getMetadataNodeData(tx);
+    private void removedLabelEventNew(LabelEntry labelEntry, Long txId) {
 
-                /**
-                 * Skip if node is bluewave_metadata node
-                 */
-                if (metaNode.getId() == nodeId) {
-                    p("deletedNodesEvent: Found bluewave_metadata node .. exiting");
-                    return;
-                }
-
-                /**
-                 * Get the nodes property from the bluewave_metadata data property
-                 */
-                JSONObject jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
-                JSONObject metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
-
-                /**
-                 * Delete the json object
-                 */
-                JSONObject nodeObject = metadataNodesJSONObject.get(Long.toString(nodeId)).toJSONObject();
-                if (nodeObject != null) {
-                    metadataNodesJSONObject.remove(Long.toString(nodeId));
-                }
-
-                /**
-                 * Replace the nodes property with the new nodes json object
-                 */
-                jsonWrapperObject.set("nodes", metadataNodesJSONObject);
-                saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
-            } catch (Throwable t) {
-                e("deletedNodesEvent: " + t.toString());
-            }
+        String labelName = labelEntry.label().name();
+        if (labelName.equals(META_NODE_LABEL)) {
+            return;
         }
-    }
 
-    // **************************************************************************
-    // ** removedLabelEvent
-    // **************************************************************************
-    private void removedLabelEvent(LabelEntry labelEntry) {
-        Node metaNode = null;
+        Long metaNodeId = null;
+        Long nodeId = labelEntry.node().getId();
+        JSONObject metaCountsNode = null;
+        /**
+         * Gather all labels from this node
+         */
+        Set<String> newNodesLabels = new HashSet<String>();
         try (Transaction tx = db.beginTx()) {
-            Long nodeId = labelEntry.node().getId();
-            String labelName = labelEntry.label().name();
-            p("removedLabelEvent: " + labelName);
-            /**
-             * Get metadata node
-             */
-            metaNode = getMetadataNodeData(tx);
+            tx.getNodeById(nodeId).getLabels().forEach(l -> newNodesLabels.add(String.valueOf(l)));
+        } catch (org.neo4j.graphdb.NotFoundException e) {
+            return;
+        }
 
+        try (Transaction tx = db.beginTx()) {
+            Node metaNode = getMetadataNodeData(tx);
+            metaNodeId = metaNode.getId();
+            metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
+        } catch (Exception e) {
+            e("removedLabelEventNew getMetadataNodeData: " + e);
+            return;
+        }
+
+        /**
+         * Discard bluewave_metadata transactions
+         */
+        if (metaNodeId == nodeId) {
+            return;
+        }
+
+        /**
+         * Add the newLabel to the labelset
+         * 
+         */
+        newNodesLabels.add(labelName);
+
+        /**
+         * Check for existence of the entry using the label set
+         */
+        JSONValue entry = null;
+        entry = metaCountsNode.get(String.valueOf(newNodesLabels.hashCode()));
+        if (!entry.isNull()) {
             /**
-             * Discard bluewave_metadata transactions
+             ** Found entry in metadata
              */
-            if (metaNode.getId() == nodeId) {
-                p("removedLabelEvent: Found bluewave_metadata for " + labelName
-                        + " exiting");
+            JSONArray entryValue = entry.toJSONArray();
+            long lastTxId = entryValue.get(INDEX_TRANSACTION_ID).toLong();
+            long lastNodeId = entryValue.get(INDEX_NODE_ID).toLong();
+            /**
+             * Check if we updated this node count already
+             */
+            if (lastTxId == txId && lastNodeId == nodeId) {
                 return;
             }
-
             /**
-             * Convert the string value at the data property to JSONObject
+             * Finally, decrement count
              */
-            JSONObject jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
-            JSONObject metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
-
-            /**
-             * Check for existence of the node this label is attached to
-             */
-            JSONObject nodeObject = null;
-            if (metadataNodesJSONObject.get(nodeId.toString()) != null) {
-                nodeObject = metadataNodesJSONObject.get(nodeId.toString()).toJSONObject();
+            Long counts = entryValue.get(INDEX_COUNT).toLong();
+            counts--;
+            if (counts == 0) {
+                /**
+                 * Remove entry
+                 */
+                metaCountsNode.remove(String.valueOf(newNodesLabels.hashCode()));
+            } else {
+                entryValue.set(INDEX_COUNT, counts);
+                entryValue.set(INDEX_TRANSACTION_ID, txId);
+                entryValue.set(INDEX_NODE_ID, nodeId);
             }
 
+            if (newNodesLabels.size() > 1) {
+                /**
+                 * Confirm entry that contains the new label set exists
+                 */
+                if (newNodesLabels.remove(labelName)) {
+                    JSONValue newEntryValue = metaCountsNode.get(String.valueOf(newNodesLabels.hashCode()));
+                    if (newEntryValue == null || newEntryValue.isNull()) {
+                        /**
+                         * Create new entry
+                         */
+                        JSONArray labelsValue = new JSONArray();
+                        newNodesLabels.iterator().forEachRemaining(l -> labelsValue.add(l));
+                        metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()),
+                                newNodesAndCountsObject(labelsValue, 1, 0, txId, nodeId));
+                    }
+                }
+            }
+        }
+
+        saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+    }
+
+    // **************************************************************************
+    // ** assignedLabelEvent NEW
+    // **************************************************************************
+    private void assignedLabelEventNew(LabelEntry labelEntry, Long txId) {
+        String labelName = labelEntry.label().name();
+        if (labelName.equals(META_NODE_LABEL)) {
+            return;
+        }
+
+        Long metaNodeId = null;
+        Long nodeId = labelEntry.node().getId();
+        JSONObject metaCountsNode = null;
+
+        try (Transaction tx = db.beginTx()) {
+            Node metaNode = getMetadataNodeData(tx);
+            metaNodeId = metaNode.getId();
+            metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
+        } catch (Exception e) {
+            e("assignedLabelEventNew getMetadataNodeData: " + e);
+            return;
+        }
+
+        /**
+         * Discard bluewave_metadata transactions
+         */
+        if (metaNodeId == nodeId) {
+            return;
+        }
+
+        /**
+         * Gather all labels from this node
+         */
+        Set<String> newNodesLabels = new HashSet<String>();
+        try (Transaction tx = db.beginTx()) {
+            tx.getNodeById(nodeId).getLabels().forEach(l -> newNodesLabels.add(String.valueOf(l)));
+        } catch (Exception e) {
+            e("assignedLabelEventNew get all labels: " + e);
+            return;
+        }
+
+        /**
+         * Check for existence of the entry using the label set
+         */
+        JSONValue entry = null;
+        entry = metaCountsNode.get(String.valueOf(newNodesLabels.hashCode()));
+        if (!entry.isNull()) {
             /**
-             * If node is found - remove label
-             * If node is not found - do nothing, node may have been deleted already
+             ** Found entry in metadata
              */
-            if (nodeObject != null) {
+            JSONArray entryValue = entry.toJSONArray();
+            long lastTxId = entryValue.get(INDEX_TRANSACTION_ID).toLong();
+            long lastNodeId = entryValue.get(INDEX_NODE_ID).toLong();
+            /**
+             * Check if we updated this node count already
+             */
+            if (lastTxId == txId && lastNodeId == nodeId) {
+                return;
+            }
+            /**
+             * Finally, increment count
+             */
+            Long counts = entryValue.get(INDEX_COUNT).toLong();
+            counts++;
+            entryValue.set(INDEX_COUNT, counts);
+            entryValue.set(INDEX_TRANSACTION_ID, txId);
+            entryValue.set(INDEX_NODE_ID, nodeId);
 
-                JSONArray nodeLabels = nodeObject.get("labels").toJSONArray();
-                boolean somethingToSave = false;
-                if (nodeLabels.isEmpty()) {
-                    /**
-                     * Do nothing
-                     */
-                } else {
+        } else {
+            /**
+             * Create new entry
+             */
+            JSONArray labelsArray = new JSONArray();
+            for (String string : newNodesLabels) {
+                labelsArray.add(string);
+            }
+            JSONArray newEntryValue = newNodesAndCountsObject(labelsArray, 1L, 0L, txId, nodeId);
+            metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), newEntryValue);
 
-                    /**
-                     * If Label is present in list, remove it
-                     */
-                    int index = -1;
-                    for (int i = 0; i < nodeLabels.length(); i++) {
-                        String temp = nodeLabels.get(i).toString();
-                        if (temp.equals(labelName)) {
-                            index = i;
-                            break;
+            /**
+             * Find entry that contained this node prior to adding this label
+             */
+            if (newNodesLabels.size() > 1) {
+                if (newNodesLabels.remove(labelName)) {
+                    JSONValue originalEntryValue = metaCountsNode.get(String.valueOf(newNodesLabels.hashCode()));
+                    if (originalEntryValue != null && !originalEntryValue.isNull()) {
+                        JSONArray originalEntryValueArray = originalEntryValue.toJSONArray();
+                        long originalNodeId = originalEntryValueArray.get(INDEX_NODE_ID).toLong();
+                        if (originalNodeId == nodeId) {
+                            /**
+                             * Decrement count in original entry
+                             * Also found PRIOR entry in metadata w/same nodeId for labels, decrement count
+                             */
+                            long originalNodeCount = originalEntryValueArray.get(INDEX_COUNT).toLong();
+                            if (originalNodeCount > 0) {
+                                originalNodeCount--;
+                                if (originalNodeCount == 0) {
+                                    /**
+                                     * No more nodes containing this label set exist so remove from index
+                                     * Remove PRIOR entry w/same nodeId for labels
+                                     */
+                                    metaCountsNode.remove(String.valueOf(newNodesLabels.hashCode()));
+                                } else {
+                                    originalEntryValueArray.set(INDEX_COUNT, originalNodeCount);
+                                    metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()),
+                                            originalEntryValueArray);
+                                }
+                            }
                         }
                     }
-                    if (index != -1) {
-                        nodeLabels.remove(index);
-                        somethingToSave = true;
-                    }
-
-                }
-                if (somethingToSave) {
-                    nodeObject.set("labels", nodeLabels);
-                    metadataNodesJSONObject.set(nodeId.toString(), nodeObject);
-
-                    if (somethingToSave) {
-                        jsonWrapperObject.set("nodes", metadataNodesJSONObject);
-                        saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
-                    }
                 }
             }
-        } catch (Throwable t) {
-            e("removedLabelEvent: " + t.toString());
         }
+        saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
 
     // **************************************************************************
-    // ** assignedLabelEvent
+    // ** createdRelationshipsEvent
     // **************************************************************************
-    private void assignedLabelsEvent(LabelEntry labelEntry) {
+    private void createdRelationshipsEvent(Relationship createdRelationship, Long txId) {
+        /**
+         * Collect r where (n) <--() These are where the nodes are the end nodes of the
+         * relationship
+         */
         Node metaNode = null;
+        Long endNodeId = createdRelationship.getEndNodeId();
+        Long metaNodeId = null;
+        JSONObject metaCountsNode = null;
+
+        /**
+         * Get metadata node
+         */
         try (Transaction tx = db.beginTx()) {
-            Long nodeId = labelEntry.node().getId();
-            String labelName = labelEntry.label().name();
-            p("assignedLabelEvent: " + labelName);
-            /**
-             * Get metadata node
-             */
             metaNode = getMetadataNodeData(tx);
-            
+            metaNodeId = metaNode.getId();
+            metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
+        } catch (Exception e) {
+            e("createdRelationshipsEvent getMetadataNodeData: " + e);
+            return;
+        }
+
+        /**
+         * Check if node is bluewave_metadata
+         */
+        if (metaNodeId == endNodeId) {
+            return;
+        }
+
+        /**
+         * Get endNode label set
+         */
+        Set<String> newNodesLabels = new HashSet<String>();
+        try (Transaction tx = db.beginTx()) {
+            tx.getNodeById(endNodeId).getLabels().forEach(l -> newNodesLabels.add(String.valueOf(l)));
+        } catch (Exception e) {
+            e("createdRelationshipsEvent getMetadataNodeData: " + e);
+            return;
+        }
+
+        /**
+         * Check for existence of the entry using the label set
+         */
+        JSONValue entry = null;
+        entry = metaCountsNode.get(String.valueOf(newNodesLabels.hashCode()));
+        if (!entry.isNull()) {
             /**
-             * Check if node is bluewave_metadata
+             ** Found entry in metadata
              */
-            if (metaNode.getId() == nodeId) {
-                p(">: assignedLabelsEvent: Found bluewave_metadata for " + labelName
-                        + " exiting");
-                return;
+            JSONArray entryValue = entry.toJSONArray();
+            long lastTxId = entryValue.get(INDEX_TRANSACTION_ID).toLong();
+            long lastNodeId = entryValue.get(INDEX_NODE_ID).toLong();
+            /**
+             * Check if we updated this node count already
+             */
+            // if (lastTxId == txId && lastNodeId == endNodeId) {
+            // p("Found matching transaction & node ids, discarding.");
+            // return;
+            // }
+            /**
+             * Finally, increment relations
+             */
+            Long relations = entryValue.get(INDEX_RELATIONS).toLong();
+            relations++;
+            entryValue.set(INDEX_RELATIONS, relations);
+            entryValue.set(INDEX_TRANSACTION_ID, txId);
+            entryValue.set(INDEX_NODE_ID, endNodeId);
+            metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), entryValue);
+            saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+        } else {
+            /**
+             * Create new entry
+             */
+            JSONArray labelsArray = new JSONArray();
+            for (String string : newNodesLabels) {
+                labelsArray.add(string);
             }
-            
-            /**
-             * Discard bluewave_metadata transactions
-             */
-            if (metaNode.getId() == labelEntry.node().getId())
-                return;
+            JSONArray newEntryValue = newNodesAndCountsObject(labelsArray, 1L, 1L, txId, endNodeId);
+            metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), newEntryValue);
+            saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+        }
 
-            /**
-             * Convert the string value at the data property to a usuable form, JSONObject
-             */
-            JSONObject jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
-            JSONObject metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
+    }
 
-            /**
-             * Check for existence of the node this label is attached to
-             */
-            JSONObject nodeObject = findOrCreateNodeFromMetadata(nodeId, metadataNodesJSONObject);
+    // **************************************************************************
+    // ** deletedRelationshipsEvent
+    // **************************************************************************
+    private void deletedRelationshipsEvent(Relationship deletedRelationship) {
+        Node metaNode = null;
+        Long endNodeId = deletedRelationship.getEndNodeId();
+        Long metaNodeId = null;
+        JSONObject metaCountsNode = null;
 
-            /**
-             * Ensure label property exists
-             */
-            if (nodeObject.get("labels").isNull()) {
-                nodeObject.set("labels", new JSONArray());
-            }
-            
-            JSONArray labelsJSONArray = nodeObject.get("labels").toJSONArray();
-            
-            /**
-             * Check for existence of this label
-             */
-            Optional<Object> obj = StreamSupport.stream(labelsJSONArray.spliterator(), false)
-                    .filter(p -> p.toString().equals(labelName.toString())).findFirst();
-             
-            if (obj != null && obj.isEmpty()) {
-                /**
-                 * This label is not attached to this node yet, add it
-                 */
-                labelsJSONArray.add(labelName);
-            }
-            jsonWrapperObject.set("nodes", metadataNodesJSONObject);
-            saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
+        /**
+         * Get metadata node
+         */
+        try (Transaction tx = db.beginTx()) {
+            metaNode = getMetadataNodeData(tx);
+            metaNodeId = metaNode.getId();
+            metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
+        } catch (Exception e) {
+            e("deletedRelationshipsEvent getMetadataNodeData: " + e);
+            return;
+        }
 
-        } catch (Throwable t) {
-            e("Error -> assignedLabelEvent: " + t.toString());
+        /**
+         * Check if node is bluewave_metadata
+         */
+        if (metaNodeId == endNodeId) {
+            return;
+        }
+
+        /**
+         * Get endNode label set
+         */
+        Set<String> newNodesLabels = new HashSet<String>();
+        try (Transaction tx = db.beginTx()) {
+            tx.getNodeById(endNodeId).getLabels().forEach(l -> newNodesLabels.add(String.valueOf(l)));
+        } catch (Exception e) {
+            e("deletedRelationshipsEvent getMetadataNodeData: " + e);
+            return;
+        }
+
+        /**
+         * Check for existence of the entry using the label set
+         */
+        JSONValue entry = null;
+        entry = metaCountsNode.get(String.valueOf(newNodesLabels.hashCode()));
+        if (!entry.isNull()) {
+            /**
+             ** Found entry in metadata
+             */
+            JSONArray entryValue = entry.toJSONArray();
+            long lastTxId = entryValue.get(INDEX_TRANSACTION_ID).toLong();
+            long lastNodeId = entryValue.get(INDEX_NODE_ID).toLong();
+            /**
+             * Check if we updated this node count already
+             */
+            // if (lastTxId == txId && lastNodeId == endNodeId) {
+            // p("Found matching transaction & node ids, discarding.");
+            // return;
+            // }
+            /**
+             * Finally, increment relations
+             */
+            Long relations = entryValue.get(INDEX_RELATIONS).toLong();
+            relations--;
+            entryValue.set(INDEX_RELATIONS, relations);
+            entryValue.set(INDEX_TRANSACTION_ID, -1);
+            entryValue.set(INDEX_NODE_ID, endNodeId);
+            metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), entryValue);
+            saveBluewaveMeta_NodesAndCounts(metaCountsNode);
         }
     }
 
@@ -566,10 +915,9 @@ public class Metadata {
         nodeID = propertyEntryNode.entity().getId();
 
         if (newProperty == null) {
-            p("removedNodePropertiesEvent exiting .. property: " + newProperty);
             return;
         }
-        p("removedNodePropertiesEvent property: " + newProperty);
+
         /**
          * Get bluewave_metadata node data
          */
@@ -590,11 +938,8 @@ public class Metadata {
          * Check if this is a bluewave_metadata transaction
          */
         if (metaNodeId == nodeID) {
-            p("removedNodePropertiesEvent Found bluewave_metadata node .. exiting");
             return;
         }
-
-        p("Removing property to nodeId: " + nodeID + ", prop:" + newProperty.toString());
 
         /**
          * Check for existence of the node this label is attached to
@@ -664,10 +1009,9 @@ public class Metadata {
         nodeID = propertyEntryNode.entity().getId();
 
         if (newProperty == null) {
-            p("assignedNodePropertiesEvent exiting .. property: " + newProperty);
             return;
         }
-        p("assignedNodePropertiesEvent adding property: " + newProperty + " to nodeId: " + nodeID);
+
         /**
          * Get bluewave_metadata node data
          */
@@ -688,7 +1032,6 @@ public class Metadata {
          * Check if this is a bluewave_metadata transaction
          */
         if (metaNodeId == nodeID) {
-            p("assignedNodePropertiesEvent Found bluewave_metadata node .. exiting");
             return;
         }
 
@@ -750,14 +1093,27 @@ public class Metadata {
             /**
              * If we do not have a reference to this node then we create it
              */
-            nodeObject = new JSONObject();
-            nodeObject.set("id", nodeId);
-            nodeObject.set("labels", new JSONArray());
-            nodeObject.set("properties", new JSONArray());
-            metadataNodesJSONObject.set(nodeId.toString(), nodeObject);
+            metadataNodesJSONObject.set(nodeId.toString(), newNode(nodeId));
         }
 
         return nodeObject;
+    }
+
+    /**
+     * Convenience method to check existence of a relationship
+     * 
+     * @param relationships JSONArray of ids representing a node's relationships
+     * @param id            the relationship id to compare
+     * @return index of matching relationship
+     */
+    private int relationshipExist(JSONArray relationships, Long id) {
+
+        for (int i = 0; i < relationships.length(); i++) {
+            if (relationships.get(i).toLong().longValue() == id) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -771,14 +1127,56 @@ public class Metadata {
         nodeObject.set("id", id);
         nodeObject.set("labels", new JSONArray());
         nodeObject.set("properties", new JSONArray());
+        nodeObject.set("relationships", new JSONArray());
         return nodeObject;
     }
 
-    private void p(Object message) {
-        // console.log(message.toString());
+    /**
+     * Holds the nodes and counts data
+     * 
+     * @param hashKey
+     * @return
+     */
+    private JSONArray newNodesAndCountsObject(JSONArray labels, long count, long relations, long txId, long nodeId) {
+        JSONArray data = new JSONArray();
+        data.add(labels);
+        data.add(count);
+        data.add(relations);
+        data.add(txId);
+        data.add(nodeId);
+        return data;
     }
 
-    private void e(Object message) {
+    /**
+     * Holds the nodes and properties data
+     * 
+     * @param label
+     * @param properties
+     * @return
+     */
+    private JSONArray newNodesAndPropertiesObject(String label, JSONArray properties) {
+        JSONArray data = new JSONArray();
+        data.set(0, label);
+        data.set(1, properties);
+        return data;
+    }
+
+    // private void p(Object message) {
+    // console.log(message.toString());
+    // }
+
+    public void e(Object message) {
         console.log("*** ------- ERROR ------- *** " + message.toString());
+    }
+
+}
+
+class DeletedNode {
+    Node node;
+    Set<String> labels;
+
+    public DeletedNode(Node node, Set<String> labels) {
+        this.node = node;
+        this.labels = labels;
     }
 }

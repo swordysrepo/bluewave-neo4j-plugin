@@ -40,8 +40,6 @@ public class Neo4JTransactionEventListenerExtensionFactory extends ExtensionFact
             this.db = db;
             this.databaseManagementService = databaseManagementService;
             this.log = log;
-
-
         }
         @Override
         public void start()
