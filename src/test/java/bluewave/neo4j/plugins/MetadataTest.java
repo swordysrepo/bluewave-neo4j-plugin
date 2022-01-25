@@ -135,13 +135,13 @@ public class MetadataTest {
             countsJSONObject.keySet().forEach(key -> {
                 assertTrue(countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong() == 0);
             });
-
+            tx.close();
         } catch (Exception e) {
             fail("ERROR -> " + e.toString());
         }
     }
 
-   // @Test
+   @Test
     public void test_Add_Relationship_To_Existing_Node() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -204,7 +204,7 @@ public class MetadataTest {
         }
     }
 
-    // @Test
+    @Test
     public void test_Delete_Existing_Label() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -278,7 +278,7 @@ public class MetadataTest {
         }
     }
 
-    // @Test
+    @Test
     public void test_Delete_All_Nodes_With_Specific_Label() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -340,7 +340,7 @@ public class MetadataTest {
         }
     }
 
-    // @Test
+    @Test
     public void test_Add_Label_To_Existing_Node() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -445,10 +445,10 @@ public class MetadataTest {
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
 
-            console.log("** bluewave_metadata node contents: --properties--:> "
-                    + metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
+            console.log("** bluewave_metadata node contents: "
+                   // + " --properties--:> " + metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
                     + "\n --counts--:> " + metaNode.getProperties(Metadata.KEY_COUNTS).toString() + "\n");
-
+            tx.close();
         } catch (Exception e) {
             fail("ERROR -> " + e);
         }
@@ -503,25 +503,29 @@ public class MetadataTest {
 
     @AfterEach
     void cleanDb() {
+
         /**
          * Wipe out all db data
          */
+        GraphDatabaseService db = this.embeddedDatabaseServer.defaultDatabaseService();
         console.log("** ");
         console.log("** ");
         console.log("** Final result:");
-        printResultsToConsole(this.embeddedDatabaseServer.defaultDatabaseService());
+        printResultsToConsole(db);
         console.log("**                                                                            **");
         console.log("**                                                                            **");
         console.log("********************************************************************************");
         console.log("********************************************************************************");
-        console.log("******** Ignore all errors below this statement, DB is in shutdown mode. *******\n\n");
-        try (Session session = driver.session()) {
-            session.run("MATCH (n) DETACH DELETE n");
-            session.close();
+        console.log("******** Ignore all errors below this statement, DB is in shutdown mode. *******");
+        try (Transaction tx = db.beginTx()) {
+            tx.execute("MATCH (n) DETACH DELETE n");
+            tx.commit();
+            tx.close();
         } catch (Exception e) {
             console.log("ERROR: " + e);
         } finally {
-            this.driver.close();
+            console.log("*** TESTS COMPLETE ***");  
+            MetadataTest.driver.close();
             this.embeddedDatabaseServer.close();
 
             // Reset Metadata flag

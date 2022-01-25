@@ -33,7 +33,7 @@ public class Metadata {
 
     public static final String META_NODE_LABEL = "bluewave_metadata";
     public static final String KEY_COUNTS = "counts";
-    public static final String KEY_PROPERTIES = "properties";
+    // public static final String KEY_PROPERTIES = "properties";
 
     public static boolean metaNodeExist = false;
     private GraphDatabaseService db;
@@ -98,7 +98,7 @@ public class Metadata {
                  * Example structure of properties in metadata
                  * (n:bluewave_metadata{"properties":{"SOME_LABEL":["prop1","propn"],"SOME_LABEL2":[["prop1","propn"]}})
                  */
-                metadataNode.setProperty(KEY_PROPERTIES, executeNodesAndPropertiesQuery().toString());
+                // metadataNode.setProperty(KEY_PROPERTIES, executeNodesAndPropertiesQuery().toString());
                 tx.commit();
                 metaNodeExist = true;
             } catch (Exception e) {
@@ -189,28 +189,28 @@ public class Metadata {
      *                  property contains the json
      *                  representation of the db
      */
-    private void saveBluewaveMeta_DataProperty(String dataValue) {
-        try (Transaction tx = db.beginTx()) {
-            Label label = Label.label(META_NODE_LABEL);
-            List<Node> returnedNodes = new ArrayList<>();
-            /**
-             * Check if metadata node exists
-             */
-            tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
-            if (!returnedNodes.isEmpty()) {
-                /**
-                 * Metadata node does not exist.
-                 * Retrieve all nodes and properties
-                 */
-                Node node = returnedNodes.get(0);
-                node.setProperty("data", dataValue.toString());
-                // tx.commit();
-            }
-            tx.commit();
-        } catch (Throwable e) {
-            e("saveBluewaveMeta_DataProperty: " + e);
-        }
-    }
+    // private void saveBluewaveMeta_DataProperty(String dataValue) {
+    //     try (Transaction tx = db.beginTx()) {
+    //         Label label = Label.label(META_NODE_LABEL);
+    //         List<Node> returnedNodes = new ArrayList<>();
+    //         /**
+    //          * Check if metadata node exists
+    //          */
+    //         tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
+    //         if (!returnedNodes.isEmpty()) {
+    //             /**
+    //              * Metadata node does not exist.
+    //              * Retrieve all nodes and properties
+    //              */
+    //             Node node = returnedNodes.get(0);
+    //             node.setProperty("data", dataValue.toString());
+    //             // tx.commit();
+    //         }
+    //         tx.commit();
+    //     } catch (Throwable e) {
+    //         e("saveBluewaveMeta_DataProperty: " + e);
+    //     }
+    // }
 
     private void saveBluewaveMeta_NodesAndCounts(JSONObject value) {
         try (Transaction tx = db.beginTx()) {
@@ -905,175 +905,175 @@ public class Metadata {
     // **************************************************************************
     // ** removedNodePropertiesEvent
     // **************************************************************************
-    public void removedNodePropertiesEvent(PropertyEntry<Node> propertyEntryNode) {
-        /**
-         * Grab new incoming property and node Id
-         */
-        String newProperty = null;
-        Long nodeID = null;
-        newProperty = propertyEntryNode.key();
-        nodeID = propertyEntryNode.entity().getId();
+    // public void removedNodePropertiesEvent(PropertyEntry<Node> propertyEntryNode) {
+    //     /**
+    //      * Grab new incoming property and node Id
+    //      */
+    //     String newProperty = null;
+    //     Long nodeID = null;
+    //     newProperty = propertyEntryNode.key();
+    //     nodeID = propertyEntryNode.entity().getId();
 
-        if (newProperty == null) {
-            return;
-        }
+    //     if (newProperty == null) {
+    //         return;
+    //     }
 
-        /**
-         * Get bluewave_metadata node data
-         */
-        Long metaNodeId = null;
-        JSONObject jsonWrapperObject;
-        JSONObject metadataNodesJSONObject;
-        try (Transaction tx = db.beginTx()) {
-            Node metaNode = getMetadataNodeData(tx);
-            metaNodeId = metaNode.getId();
-            jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
-            metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
-        } catch (Exception e) {
-            e("removedNodePropertiesEvent getMetadataNodeData: " + e);
-            return;
-        }
+    //     /**
+    //      * Get bluewave_metadata node data
+    //      */
+    //     Long metaNodeId = null;
+    //     JSONObject jsonWrapperObject;
+    //     JSONObject metadataNodesJSONObject;
+    //     try (Transaction tx = db.beginTx()) {
+    //         Node metaNode = getMetadataNodeData(tx);
+    //         metaNodeId = metaNode.getId();
+    //         jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
+    //         metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
+    //     } catch (Exception e) {
+    //         e("removedNodePropertiesEvent getMetadataNodeData: " + e);
+    //         return;
+    //     }
 
-        /**
-         * Check if this is a bluewave_metadata transaction
-         */
-        if (metaNodeId == nodeID) {
-            return;
-        }
+    //     /**
+    //      * Check if this is a bluewave_metadata transaction
+    //      */
+    //     if (metaNodeId == nodeID) {
+    //         return;
+    //     }
 
-        /**
-         * Check for existence of the node this label is attached to
-         */
-        JSONObject nodeObject = null;
-        if (metadataNodesJSONObject.get(nodeID.toString()) != null) {
-            nodeObject = metadataNodesJSONObject.get(nodeID.toString()).toJSONObject();
-        }
+    //     /**
+    //      * Check for existence of the node this label is attached to
+    //      */
+    //     JSONObject nodeObject = null;
+    //     if (metadataNodesJSONObject.get(nodeID.toString()) != null) {
+    //         nodeObject = metadataNodesJSONObject.get(nodeID.toString()).toJSONObject();
+    //     }
 
-        /**
-         * If node is found - remove property
-         * If node is not found - do nothing, node may have been deleted already
-         */
-        if (nodeObject != null) {
+    //     /**
+    //      * If node is found - remove property
+    //      * If node is not found - do nothing, node may have been deleted already
+    //      */
+    //     if (nodeObject != null) {
 
-            JSONArray nodeProps = nodeObject.get("properties").toJSONArray();
-            boolean somethingToSave = false;
-            if (nodeProps.isEmpty()) {
-                /**
-                 * Do nothing
-                 */
-            } else {
-                /**
-                 * If property is present, remove it
-                 */
-                int index = -1;
-                for (int i = 0; i < nodeProps.length(); i++) {
-                    String temp = nodeProps.get(i).toString();
-                    if (temp.equals(newProperty)) {
-                        index = i;
-                        break;
-                    }
-                }
-                if (index != -1) {
-                    nodeProps.remove(index);
-                    somethingToSave = true;
-                }
+    //         JSONArray nodeProps = nodeObject.get("properties").toJSONArray();
+    //         boolean somethingToSave = false;
+    //         if (nodeProps.isEmpty()) {
+    //             /**
+    //              * Do nothing
+    //              */
+    //         } else {
+    //             /**
+    //              * If property is present, remove it
+    //              */
+    //             int index = -1;
+    //             for (int i = 0; i < nodeProps.length(); i++) {
+    //                 String temp = nodeProps.get(i).toString();
+    //                 if (temp.equals(newProperty)) {
+    //                     index = i;
+    //                     break;
+    //                 }
+    //             }
+    //             if (index != -1) {
+    //                 nodeProps.remove(index);
+    //                 somethingToSave = true;
+    //             }
 
-            }
-            if (somethingToSave) {
-                nodeObject.set("properties", nodeProps);
-                metadataNodesJSONObject.set(nodeID.toString(), nodeObject);
+    //         }
+    //         if (somethingToSave) {
+    //             nodeObject.set("properties", nodeProps);
+    //             metadataNodesJSONObject.set(nodeID.toString(), nodeObject);
 
-                if (somethingToSave) {
-                    jsonWrapperObject.set("nodes", metadataNodesJSONObject);
-                    saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
-                }
+    //             if (somethingToSave) {
+    //                 jsonWrapperObject.set("nodes", metadataNodesJSONObject);
+    //                 saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
+    //             }
 
-            }
-        }
-    }
+    //         }
+    //     }
+    // }
 
     // **************************************************************************
     // ** assignedNodePropertiesEvent
     // **************************************************************************
-    private void assignedNodePropertiesEvent(PropertyEntry<Node> propertyEntryNode) {
+    // private void assignedNodePropertiesEvent(PropertyEntry<Node> propertyEntryNode) {
 
-        if (propertyEntryNode == null)
-            return;
+    //     if (propertyEntryNode == null)
+    //         return;
 
-        /**
-         * Grab new incoming property and node Id
-         */
-        String newProperty = null;
-        Long nodeID = null;
-        newProperty = propertyEntryNode.key();
-        nodeID = propertyEntryNode.entity().getId();
+    //     /**
+    //      * Grab new incoming property and node Id
+    //      */
+    //     String newProperty = null;
+    //     Long nodeID = null;
+    //     newProperty = propertyEntryNode.key();
+    //     nodeID = propertyEntryNode.entity().getId();
 
-        if (newProperty == null) {
-            return;
-        }
+    //     if (newProperty == null) {
+    //         return;
+    //     }
 
-        /**
-         * Get bluewave_metadata node data
-         */
-        Long metaNodeId = null;
-        JSONObject jsonWrapperObject;
-        JSONObject metadataNodesJSONObject;
-        try (Transaction tx = db.beginTx()) {
-            Node metaNode = getMetadataNodeData(tx);
-            metaNodeId = metaNode.getId();
-            jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
-            metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
-        } catch (Exception e) {
-            e("assignedNodePropertiesEvent getMetadataNodeData: " + e);
-            return;
-        }
+    //     /**
+    //      * Get bluewave_metadata node data
+    //      */
+    //     Long metaNodeId = null;
+    //     JSONObject jsonWrapperObject;
+    //     JSONObject metadataNodesJSONObject;
+    //     try (Transaction tx = db.beginTx()) {
+    //         Node metaNode = getMetadataNodeData(tx);
+    //         metaNodeId = metaNode.getId();
+    //         jsonWrapperObject = new JSONObject(metaNode.getProperty("data").toString());
+    //         metadataNodesJSONObject = jsonWrapperObject.get("nodes").toJSONObject();
+    //     } catch (Exception e) {
+    //         e("assignedNodePropertiesEvent getMetadataNodeData: " + e);
+    //         return;
+    //     }
 
-        /**
-         * Check if this is a bluewave_metadata transaction
-         */
-        if (metaNodeId == nodeID) {
-            return;
-        }
+    //     /**
+    //      * Check if this is a bluewave_metadata transaction
+    //      */
+    //     if (metaNodeId == nodeID) {
+    //         return;
+    //     }
 
-        JSONObject nodeObject = findOrCreateNodeFromMetadata(nodeID, metadataNodesJSONObject);
-        JSONArray nodeProps = nodeObject.get("properties").toJSONArray();
-        boolean somethingToSave = false;
-        if (nodeProps.isEmpty()) {
-            /**
-             * This node has zero properties so just add the new one
-             */
-            nodeProps.add(newProperty);
-            somethingToSave = true;
-        } else {
-            boolean found = false;
-            for (Object object : nodeProps) {
-                if (String.valueOf(object).equals(newProperty)) {
-                    found = true;
-                }
-            }
-            if (!found) {
-                /**
-                 * New property is not present in list so add
-                 */
-                nodeProps.add(newProperty);
-                somethingToSave = true;
-            }
-        }
+    //     JSONObject nodeObject = findOrCreateNodeFromMetadata(nodeID, metadataNodesJSONObject);
+    //     JSONArray nodeProps = nodeObject.get("properties").toJSONArray();
+    //     boolean somethingToSave = false;
+    //     if (nodeProps.isEmpty()) {
+    //         /**
+    //          * This node has zero properties so just add the new one
+    //          */
+    //         nodeProps.add(newProperty);
+    //         somethingToSave = true;
+    //     } else {
+    //         boolean found = false;
+    //         for (Object object : nodeProps) {
+    //             if (String.valueOf(object).equals(newProperty)) {
+    //                 found = true;
+    //             }
+    //         }
+    //         if (!found) {
+    //             /**
+    //              * New property is not present in list so add
+    //              */
+    //             nodeProps.add(newProperty);
+    //             somethingToSave = true;
+    //         }
+    //     }
 
-        if (somethingToSave) {
-            nodeObject.set("properties", nodeProps);
-            metadataNodesJSONObject.set(nodeID.toString(), nodeObject);
+    //     if (somethingToSave) {
+    //         nodeObject.set("properties", nodeProps);
+    //         metadataNodesJSONObject.set(nodeID.toString(), nodeObject);
 
-            try (Transaction tx = db.beginTx()) {
-                if (somethingToSave) {
-                    jsonWrapperObject.set("nodes", metadataNodesJSONObject);
-                    saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
-                }
-            } catch (Exception e) {
-                e(">: assignedNodePropertiesEvent: " + e.getMessage());
-            }
-        }
-    }
+    //         try (Transaction tx = db.beginTx()) {
+    //             if (somethingToSave) {
+    //                 jsonWrapperObject.set("nodes", metadataNodesJSONObject);
+    //                 saveBluewaveMeta_DataProperty(jsonWrapperObject.toString());
+    //             }
+    //         } catch (Exception e) {
+    //             e(">: assignedNodePropertiesEvent: " + e.getMessage());
+    //         }
+    //     }
+    // }
 
     // **************************************************************************
     // ** findOrCreateNodeFromMetadata
