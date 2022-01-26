@@ -141,7 +141,7 @@ public class MetadataTest {
         }
     }
 
-   @Test
+    @Test
     public void test_Add_Relationship_To_Existing_Node() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
@@ -446,7 +446,8 @@ public class MetadataTest {
             Node metaNode = (Node) record.get("n");
 
             console.log("** bluewave_metadata node contents: "
-                   // + " --properties--:> " + metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
+                    // + " --properties--:> " +
+                    // metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
                     + "\n --counts--:> " + metaNode.getProperties(Metadata.KEY_COUNTS).toString() + "\n");
             tx.close();
         } catch (Exception e) {
@@ -517,19 +518,15 @@ public class MetadataTest {
         console.log("********************************************************************************");
         console.log("********************************************************************************");
         console.log("******** Ignore all errors below this statement, DB is in shutdown mode. *******");
-        try (Transaction tx = db.beginTx()) {
-            tx.execute("MATCH (n) DETACH DELETE n");
-            tx.commit();
+        try (org.neo4j.driver.Transaction tx = driver.session().beginTransaction()) {
+            tx.run("MATCH (n) DETACH DELETE n");
             tx.close();
         } catch (Exception e) {
             console.log("ERROR: " + e);
         } finally {
-            console.log("*** TESTS COMPLETE ***");  
+            console.log("*** TESTS COMPLETE ***");
             MetadataTest.driver.close();
             this.embeddedDatabaseServer.close();
-
-            // Reset Metadata flag
-            Metadata.metaNodeExist = false;
         }
     }
 }

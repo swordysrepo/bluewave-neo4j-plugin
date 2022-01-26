@@ -25,15 +25,9 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     // **************************************************************************
     // ** Constructor
     // **************************************************************************
-    public Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService, final LogService logsvc) {
-
-        meta = new Metadata(graphDatabaseService);
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                meta.init();
-            }
-        }).start();
+    public Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService, final LogService logsvc,
+            Metadata metadata) {
+        meta = metadata;
 
         // Find the config file
         javaxt.io.Jar jar = new javaxt.io.Jar(this);
@@ -47,6 +41,19 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
         } catch (Exception e) {
             console.log(e.getMessage());
             return;
+        }
+
+        /**
+         * Get metadata timer configurations.
+         * Both are defaulted to 24hrs.
+         */
+        Long interval = config.get("metadata_interval").toLong();
+        if (interval != null && interval != 0) {
+            meta.setInterval(interval);
+        }
+        Long delay = config.get("metadata_delay").toLong();
+        if (delay != null && delay != 0) {
+            meta.setDelay(delay);
         }
 
         // Instantiate logger
@@ -93,7 +100,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     public Object beforeCommit(final TransactionData data, final Transaction transaction,
             final GraphDatabaseService databaseService) throws Exception {
 
-        if (meta != null) {
+        if (meta != null && meta.isAvailable) {
             try {
                 meta.handleEventBeforeCommit(data);
             } catch (Throwable t) {
@@ -184,7 +191,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
     public void afterCommit(final TransactionData data, final Object state,
             final GraphDatabaseService databaseService) {
 
-        if (meta != null) {
+        if (meta != null && meta.isAvailable) {
             try {
                 meta.handleEventAfterCommit(data);
             } catch (Exception e) {
