@@ -1,13 +1,8 @@
 package bluewave.neo4j.plugins;
 
-import static javaxt.utils.Console.console;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
@@ -20,47 +15,84 @@ import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.event.LabelEntry;
 import org.neo4j.graphdb.event.TransactionData;
 
-import javaxt.json.JSONArray;
-import javaxt.json.JSONObject;
-import javaxt.json.JSONValue;
+import javaxt.json.*;
 import javaxt.utils.Date;
+import static javaxt.utils.Console.console;
 
-public class Metadata {
 
-    public static final int BEFORE_COMMIT = 1;
-    public static final int AFTER_COMMIT = 2;
+//******************************************************************************
+//**  Metadata Class
+//******************************************************************************
+/**
+ *   Used to create and update metadata for the graph. Metadata is stored in a
+ *   metadata node. Optionally, metadata can be cached to a local file for
+ *   faster startup.
+ *
+ ******************************************************************************/
 
-    public static final String META_NODE_LABEL = "bluewave_metadata";
+public class Metadata implements Runnable {
+
+    private static List pool = new LinkedList();
+    private ConcurrentHashMap<String, Object> cache;
+    private javaxt.io.Directory cacheDir;
+
+    private static final int BEFORE_COMMIT = 1;
+    private static final int AFTER_COMMIT = 2;
+
+    private String META_NODE_LABEL = "bluewave_metadata";
     public static final String KEY_COUNTS = "counts";
 
     private GraphDatabaseService db;
 
     public static final int INDEX_LABELS = 0;
-    public static final int INDEX_COUNT = 1;
+    private static final int INDEX_COUNT = 1;
     public static final int INDEX_RELATIONS = 2;
-    public static final int INDEX_TRANSACTION_ID = 3;
-    public static final int INDEX_NODE_ID = 4;
+    private static final int INDEX_TRANSACTION_ID = 3;
+    private static final int INDEX_NODE_ID = 4;
 
-    private java.util.Timer timer = new java.util.Timer();
+    private java.util.Timer timer;
 
     private long interval = 24 * 60 * 60 * 1000; // 24 hours
     private long delay = 24 * 60 * 60 * 1000;
-    public boolean isAvailable = false;
+    private boolean isAvailable = false;
 
+
+  //**************************************************************************
+  //** Constructor
+  //**************************************************************************
     public Metadata(GraphDatabaseService databaseService) {
+        cache = new ConcurrentHashMap<>();
         db = databaseService;
+        timer = new java.util.Timer();
     }
 
-    /**
-     * Create the metadata node if it doesn't exist, set timer
-     * 
-     */
+
+  //**************************************************************************
+  //** init
+  //**************************************************************************
+  /** Used to initialize the Metadata class and populate the metadata node
+   */
     public void init() {
         while (!db.isAvailable(500)) {
             e("db.isAvailable == false");
         }
         isAvailable = false;
-  
+
+
+
+        long startTime = System.currentTimeMillis();
+        JSONObject nodes = executeNodesAndCountsQuery();
+        try{
+            getNodes();
+            getProperties();
+        }
+        catch(Exception e){
+        }
+        long ellapsedTime = System.currentTimeMillis()-startTime;
+        console.log("Fetched nodes and properties in " + ellapsedTime + "ms");
+        //TODO: unsure the timer task interval is slower than the ellapsedTime
+
+
         Label label = Label.label(META_NODE_LABEL);
         try (Transaction tx = db.beginTx()) {
             ResourceIterator<Node> nodesIterator = tx.findNodes(label);
@@ -70,7 +102,7 @@ public class Metadata {
             } else {
                 metadataNode = tx.createNode(label);
             }
-            metadataNode.setProperty(KEY_COUNTS, executeNodesAndCountsQuery().toString());
+            metadataNode.setProperty(KEY_COUNTS, nodes.toString());
             tx.commit();
             isAvailable = true;
         } catch (Exception e) {
@@ -78,7 +110,68 @@ public class Metadata {
         }
     }
 
-    public void startTimer() {
+
+  //**************************************************************************
+  //** setNodeName
+  //**************************************************************************
+    public void setNodeName(String nodeName){
+        if (nodeName==null || nodeName.isBlank()) return;
+        META_NODE_LABEL = nodeName;
+    }
+
+
+  //**************************************************************************
+  //** setCacheDirectory
+  //**************************************************************************
+    public void setCacheDirectory(javaxt.io.Directory dir){
+        cacheDir = dir;
+    }
+
+
+  //**************************************************************************
+  //** run
+  //**************************************************************************
+    public void run() {
+        while (true) {
+
+            Object obj;
+            synchronized (pool) {
+                while (pool.isEmpty()) {
+                  try {
+                    pool.wait();
+                  }
+                  catch (InterruptedException e) {
+                      break;
+                  }
+                }
+                obj = pool.remove(0);
+            }
+
+            if (obj==null) return;
+
+            //TODO: updateCache()
+        }
+    }
+
+
+  //**************************************************************************
+  //** stop
+  //**************************************************************************
+    public void stop(){
+        cancelTimer();
+
+        synchronized (pool) {
+            pool.clear();
+            pool.add(0, null);
+            pool.notifyAll();
+        }
+    }
+
+
+  //**************************************************************************
+  //** startTimer
+  //**************************************************************************
+    private void startTimer() {
         if (timer == null) {
             timer = new java.util.Timer();
         }
@@ -91,17 +184,25 @@ public class Metadata {
         }, delay, interval);
     }
 
-    public void cancelTimer() {
+
+  //**************************************************************************
+  //** cancelTimer
+  //**************************************************************************
+    private void cancelTimer() {
         if (timer != null) {
             timer.cancel();
             timer = null;
         }
     }
 
+
+  //**************************************************************************
+  //** executeNodesAndCountsQuery
+  //**************************************************************************
     private JSONObject executeNodesAndCountsQuery() {
         String query =
                 "MATCH (n) RETURN distinct labels(n) as labels, count(labels(n)) as count, sum(size((n) <--())) as relations";
-       
+
         JSONObject containerOfCounts = new JSONObject();
         try (Transaction tx = db.beginTx()) {
             Result rs = tx.execute(query);
@@ -123,14 +224,13 @@ public class Metadata {
         return null;
     }
 
-    /**
-     * Retrieve the bluewave_metadata node
-     * 
-     * @param Transaction tx
-     * @return {@link Node}
-     * @throws NotInTransactionException
-     */
-    public Node getMetadataNodeData(Transaction tx) throws NotInTransactionException {
+
+  //**************************************************************************
+  //** getMetadataNodeData
+  //**************************************************************************
+  /** Returns the metadata node
+   */
+    private Node getMetadataNodeData(Transaction tx) throws NotInTransactionException {
         try {
             Label metadataNodeLabel = Label.label(META_NODE_LABEL);
             ResourceIterator<Node> result = tx.findNodes(metadataNodeLabel);
@@ -152,7 +252,7 @@ public class Metadata {
         try (Transaction tx = db.beginTx()) {
             Label label = Label.label(META_NODE_LABEL);
             List<Node> returnedNodes = new ArrayList<>();
-            
+
             tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
             if (!returnedNodes.isEmpty()) {
                 Node node = returnedNodes.get(0);
@@ -164,27 +264,27 @@ public class Metadata {
         }
     }
 
-    // **************************************************************************
-    // ** handleEventBeforeCommit
-    // **************************************************************************
-    public void handleEventBeforeCommit(final TransactionData data) throws Exception {
-        // ***********************************************
-        // ** Deleted Nodes
-        // ***********************************************
-        try {
 
+  //**************************************************************************
+  //** handleEventBeforeCommit
+  //**************************************************************************
+    public void handleEventBeforeCommit(final TransactionData data) throws Exception {
+        if (!isAvailable) return;
+
+      //Deleted Nodes
+        try {
             if (data.deletedNodes() != null) {
                 data.deletedNodes().forEach(n -> {
                     deletedNodesEventNew(n);
                 });
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             e("deletedNodesEvent: calling forEach(): " + e);
         }
 
-        // ***********************************************
-        // ** Deleted Relationships
-        // ***********************************************
+
+      //Deleted Relationships
         try {
             if (data.deletedRelationships() != null) {
                 data.deletedRelationships().forEach(n -> deletedRelationshipsEvent(n));
@@ -194,14 +294,16 @@ public class Metadata {
         }
     }
 
-    // **************************************************************************
-    // ** handleEventAfterCommit
-    // **************************************************************************
-    public synchronized void handleEventAfterCommit(final TransactionData data) throws Exception {
 
-        // ***********************************************
-        // ** Created Nodes
-        // ***********************************************
+  //**************************************************************************
+  //** handleEventAfterCommit
+  //**************************************************************************
+    public synchronized void handleEventAfterCommit(final TransactionData data) throws Exception {
+        if (!isAvailable) return;
+
+      //***********************************************
+      //** Created Nodes
+      //***********************************************
         try {
             Map<Long, Set<String>> nodeLabels = new HashMap<Long, Set<String>>();
 
@@ -229,9 +331,9 @@ public class Metadata {
             e("createNodesEventNew: calling forEach(): " + e);
         }
 
-        // ***********************************************
-        // ** Assigned Labels
-        // ***********************************************
+      //***********************************************
+      //** Assigned Labels
+      //***********************************************
         try {
             if (data.assignedLabels() != null) {
                 data.assignedLabels()
@@ -241,9 +343,9 @@ public class Metadata {
             e("assignedLabelsEvent: " + e);
         }
 
-        // ***********************************************
-        // ** Removed Labels
-        // ***********************************************
+      //***********************************************
+      //** Removed Labels
+      //***********************************************
         try {
             if (data.removedLabels() != null) {
                 data.removedLabels().forEach(n -> removedLabelEventNew(n, data.getTransactionId()));
@@ -252,9 +354,9 @@ public class Metadata {
             e("removedLabelEvent: " + e);
         }
 
-        // ***********************************************
-        // ** Created Relationships
-        // ***********************************************
+      //***********************************************
+      //** Created Relationships
+      //***********************************************
         try {
             if (data.createdRelationships() != null) {
                 data.createdRelationships()
@@ -268,21 +370,21 @@ public class Metadata {
 
     /**
      * Convenience method to determine if current node is the metadata node
-     * 
+     *
      * @param tx {@link Transaction}
      * @param nodeId current node id
      * @return true if this id matches the id of the bluewave_metadata node
      */
-    public boolean isBluewaveMetadataNode(Transaction tx, long nodeId) {
+    private boolean isBluewaveMetadataNode(Transaction tx, long nodeId) {
         Node metaNode = getMetadataNodeData(tx);
         return metaNode.getId() == nodeId;
     }
 
-    // **************************************************************************
-    // ** createdNodesEvent NEW
-    // **************************************************************************
+  //**************************************************************************
+  //** createdNodesEvent NEW
+  //**************************************************************************
     private void createdNodesEventNew(Long nodeId, Set<String> newNodesLabels, Long txId) {
-       
+
         Long metaNodeId = null;
         JSONObject metaCountsNode = null;
         Node metaNode = null;
@@ -329,11 +431,11 @@ public class Metadata {
 
     }
 
-    // **************************************************************************
-    // ** deletedNodesEvent New
-    // **************************************************************************
+  //**************************************************************************
+  //** deletedNodesEvent New
+  //**************************************************************************
     private void deletedNodesEventNew(Node node) {
-       
+
         Long metaNodeId = null;
         Long nodeId = node.getId();
         JSONObject metaCountsNode = null;
@@ -393,9 +495,9 @@ public class Metadata {
         }
     }
 
-    // **************************************************************************
-    // ** removedLabelEvent NEW
-    // **************************************************************************
+  //**************************************************************************
+  //** removedLabelEvent NEW
+  //**************************************************************************
     private void removedLabelEventNew(LabelEntry labelEntry, Long txId) {
 
         String labelName = labelEntry.label().name();
@@ -494,9 +596,9 @@ public class Metadata {
         saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
 
-    // **************************************************************************
-    // ** assignedLabelEvent NEW
-    // **************************************************************************
+  //**************************************************************************
+  //** assignedLabelEvent NEW
+  //**************************************************************************
     private void assignedLabelEventNew(LabelEntry labelEntry, Long txId) {
         String labelName = labelEntry.label().name();
         if (labelName.equals(META_NODE_LABEL)) {
@@ -612,9 +714,9 @@ public class Metadata {
         saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
 
-    // **************************************************************************
-    // ** createdRelationshipsEvent
-    // **************************************************************************
+  //**************************************************************************
+  //** createdRelationshipsEvent
+  //**************************************************************************
     private void createdRelationshipsEvent(Relationship createdRelationship, Long txId) {
         /**
          * Collect r where (n) <--() These are where the nodes are the end nodes of the relationship
@@ -665,7 +767,7 @@ public class Metadata {
              ** Found entry in metadata
              */
             JSONArray entryValue = entry.toJSONArray();
-            
+
             /**
              * Finally, increment relations
              */
@@ -691,9 +793,9 @@ public class Metadata {
 
     }
 
-    // **************************************************************************
-    // ** deletedRelationshipsEvent
-    // **************************************************************************
+  //**************************************************************************
+  //** deletedRelationshipsEvent
+  //**************************************************************************
     private void deletedRelationshipsEvent(Relationship deletedRelationship) {
         Node metaNode = null;
         Long endNodeId = deletedRelationship.getEndNodeId();
@@ -741,7 +843,7 @@ public class Metadata {
              ** Found entry in metadata
              */
             JSONArray entryValue = entry.toJSONArray();
-            
+
             /**
              * Finally, increment relations
              */
@@ -779,16 +881,295 @@ public class Metadata {
         console.log(message.toString());
     }
 
-    public void e(Object message) {
+    private void e(Object message) {
         console.log("*** ------- ERROR ------- *** " + message.toString());
     }
 
-    public void setInterval(Long interval) {
+    private void setInterval(Long interval) {
         this.interval = interval;
     }
 
-    public void setDelay(Long delay) {
+    private void setDelay(Long delay) {
         this.delay = delay;
+    }
+
+
+  //**************************************************************************
+  //** log
+  //**************************************************************************
+  /** Used to add an event to the queue
+   */
+    public void log(String action, String type, JSONArray data, String username){
+        //TODO: add event to pool
+    }
+
+
+  //**************************************************************************
+  //** updateCache
+  //**************************************************************************
+  /** Used to update the cached nodes and properties
+   */
+    private void updateCache(String action, String type, JSONArray data, String username){
+
+        if ((action.equals("create") || action.equals("delete")) && (type.equals("nodes") || type.equals("relationships")))
+        synchronized(cache){
+            try{
+
+              //Update nodes
+                JSONArray nodes = getNodes();
+                boolean updateFile = false;
+                for (int i=0; i<data.length(); i++){
+                    JSONArray entry = data.get(i).toJSONArray();
+                    if (entry.isEmpty()) continue;
+
+
+                    HashSet<String> labels = new HashSet<>();
+                    for (int j=1; j<entry.length(); j++){
+                        String label = entry.get(j).toString();
+                        if (label!=null) label = label.toLowerCase();
+                        labels.add(label);
+                    }
+
+                    boolean foundMatch = false;
+                    for (int j=0; j<nodes.length(); j++){
+                        JSONObject node = nodes.get(j).toJSONObject();
+
+                        String label = node.get("node").toString();
+                        if (label!=null && labels.contains(label.toLowerCase())){
+                            if (type.equals("nodes")){
+                                AtomicLong count = (AtomicLong) node.get("count").toObject();
+                                Long a = count.get();
+                                if (action.equals("create")){
+                                    count.incrementAndGet();
+                                }
+                                else{
+                                    Long n = count.decrementAndGet();
+                                    if (n==0){
+                                        //TODO: Remove node
+                                    }
+                                }
+                                Long b = count.get();
+                                console.log((b>a ? "increased " : "decreased ") + label + " to " + b);
+                                updateFile = true;
+                            }
+                            else if (type.equals("relationships")){
+                                AtomicLong relations = (AtomicLong) node.get("relations").toObject();
+                            }
+
+                            foundMatch = true;
+                            break;
+                        }
+                    }
+
+
+                    if (!foundMatch){
+                        if (action.equals("create") && (type.equals("nodes"))){
+                            console.log("add node!");
+                            String label = entry.get(1).toString();
+                            AtomicLong count = new AtomicLong(1);
+                            AtomicLong relations = new AtomicLong(0);
+                            JSONObject json = new JSONObject();
+                            json.set("node", label);
+                            json.set("count", count);
+                            json.set("relations", relations);
+                            json.set("id", label);
+                            nodes.add(json);
+                            updateFile = true;
+                        }
+                    }
+                }
+
+
+
+
+
+
+              //TODO: Update properties
+
+
+
+              //TODO: Update network
+
+
+                cache.notifyAll();
+
+            }
+            catch(Exception e){
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    private static final String nodesQuery =
+    "MATCH (n) RETURN\n" +
+    "distinct labels(n) as labels,\n" +
+    "count(labels(n)) as count,\n" +
+    "sum(size((n) <--())) as relations;";
+
+
+
+  //**************************************************************************
+  //** getNodes
+  //**************************************************************************
+    private JSONArray getNodes() throws Exception {
+
+        synchronized(cache){
+            Object obj = cache.get("nodes");
+            if (obj!=null){
+                return (JSONArray) obj;
+            }
+            else{
+                JSONArray arr = new JSONArray();
+
+                javaxt.io.File f = null;
+                if (cacheDir!=null){
+                    f = new javaxt.io.File(cacheDir, "nodes.json");
+                }
+
+                if (f!=null && f.exists()){
+                    arr = new JSONArray(f.getText());
+                    for (int i=0; i<arr.length(); i++){
+                        JSONObject node = arr.get(i).toJSONObject();
+                        Long c = node.get("count").toLong();
+                        Long r = node.get("relations").toLong();
+                        AtomicLong count = new AtomicLong(c==null ? 0 : c);
+                        AtomicLong relations = new AtomicLong(r==null ? 0 : r);
+                        node.set("count", count);
+                        node.set("relations", relations);
+                    }
+                }
+                else{
+
+                    try (Transaction tx = db.beginTx()) {
+
+                      //Execute query
+                        Result rs = tx.execute(nodesQuery);
+                        while (rs.hasNext()){
+                            Map<String, Object> r = rs.next();
+                            JSONArray labels = new JSONArray(r.get("labels").toString());
+                            String label = labels.isEmpty()? "" : labels.get(0).toString();
+
+                            Long _count = Long.parseLong(r.get("count").toString());
+                            AtomicLong count = new AtomicLong(_count);
+
+                            Long _relations = Long.parseLong(r.get("relations").toString());
+                            AtomicLong relations = new AtomicLong(_relations);
+
+                            JSONObject json = new JSONObject();
+                            json.set("node", label);
+                            json.set("count", count);
+                            json.set("relations", relations);
+                            json.set("id", label);
+                            arr.add(json);
+                        }
+
+
+                      //Write file
+                        if (f!=null){
+                            f.create();
+                            f.write(arr.toString());
+                        }
+                    }
+                    catch (Exception e) {
+                        e("executeNodesQuery: " + e);
+                        throw e;
+                    }
+                }
+
+
+
+              //Update cache
+                cache.put("nodes", arr);
+                cache.notify();
+
+
+                return arr;
+
+            }
+        }
+    }
+
+    private String propertiesQuery =
+    "MATCH(n)\n" +
+    "WITH LABELS(n) AS labels , KEYS(n) AS keys\n" +
+    "UNWIND labels AS label\n" +
+    "UNWIND keys AS key\n" +
+    "RETURN DISTINCT label as node, COLLECT(DISTINCT key) AS properties\n" +
+    "ORDER BY label";
+
+
+  //**************************************************************************
+  //** getProperties
+  //**************************************************************************
+    private JSONArray getProperties() throws Exception {
+        synchronized(cache){
+            Object obj = cache.get("properties");
+            if (obj!=null){
+                return (JSONArray) obj;
+            }
+            else{
+                JSONArray arr = new JSONArray();
+
+                javaxt.io.File f = null;
+                if (cacheDir!=null){
+                    f = new javaxt.io.File(cacheDir, "properties.json");
+                }
+
+                if (f!=null && f.exists()){
+                    arr = new JSONArray(f.getText());
+                }
+                else{
+
+                    try (Transaction tx = db.beginTx()) {
+
+                      //Execute query
+                        Result rs = tx.execute(propertiesQuery);
+                        while (rs.hasNext()){
+                            Map<String, Object> r = rs.next();
+                            Object node = r.get("node");
+                            Object props = r.get("properties");
+                            if (node==null) continue;
+
+
+                            JSONObject json = new JSONObject();
+                            json.set("node", node);
+                            JSONArray properties = new JSONArray();
+                            json.set("properties", properties);
+                            if (props!=null){
+                                for (Object p : (List) props){
+                                    properties.add(p);
+                                }
+                            }
+                            arr.add(json);
+                        }
+
+
+
+                      //Write file
+                        if (f!=null){
+                            f.create();
+                            f.write(arr.toString());
+                        }
+                    }
+                    catch (Exception e) {
+                        e.printStackTrace();
+                        e("executePropertiesQuery: " + e);
+                        throw e;
+                    }
+                }
+
+
+
+              //Update cache
+                cache.put("properties", arr);
+                cache.notify();
+
+
+                return arr;
+
+            }
+        }
     }
 
 }
