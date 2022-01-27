@@ -12,203 +12,141 @@ import org.neo4j.graphdb.event.TransactionEventListener;
 import org.neo4j.logging.internal.LogService;
 
 import java.util.*;
-import javaxt.json.JSONArray;
-import javaxt.json.JSONObject;
+import javaxt.json.*;
 import static javaxt.utils.Console.console;
 
 public class Neo4JTransactionEventListener implements TransactionEventListener<Object> {
 
     private Logger logger;
-    private javaxt.io.File configFile;
-    Metadata meta = null;
+    private Metadata metadata;
 
-    // **************************************************************************
-    // ** Constructor
-    // **************************************************************************
-    public Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService, final LogService logsvc,
-            Metadata metadata) {
-        meta = metadata;
 
-        // Find the config file
-        javaxt.io.Jar jar = new javaxt.io.Jar(this);
-        java.io.File pluginDir = jar.getFile().getParentFile();
-        configFile = new javaxt.io.File(pluginDir, "config.json");
-
-        // Parse the config file
-        JSONObject config = null;
-        try {
-            config = new JSONObject(configFile.getText());
-        } catch (Exception e) {
-            console.log(e.getMessage());
-            return;
-        }
-
-        /**
-         * Get metadata timer configurations.
-         * Both are defaulted to 24hrs.
-         */
-        Long interval = config.get("metadata_interval").toLong();
-        if (interval != null && interval != 0) {
-            meta.setInterval(interval);
-        }
-        Long delay = config.get("metadata_delay").toLong();
-        if (delay != null && delay != 0) {
-            meta.setDelay(delay);
-        }
-
-        // Instantiate logger
-        logger = new Logger();
-
-        // Set path to the log file directory
-        try {
-            javaxt.io.Directory logDir = new javaxt.io.Directory(config.get("logger").get("path").toString());
-            logger.setDirectory(logDir);
-        } catch (Exception e) {
-        }
-
-        // Initialize database
-        try {
-            JSONObject json = config.get("database").toJSONObject();
-            String path = json.get("path").toString().replace("\\", "/");
-            javaxt.io.Directory dbDir = new javaxt.io.Directory(path);
-            dbDir.create();
-            path = new java.io.File(dbDir.toString() + "database").getCanonicalPath();
-
-            javaxt.sql.Database database = new javaxt.sql.Database();
-            database.setDriver("H2");
-            database.setHost(path);
-            database.setConnectionPoolSize(25);
-            logger.setDatabase(database);
-        } catch (Exception e) {
-
-        }
-
-        // Get webserver config
-        try {
-            logger.setWebServer(config.get("webserver").toJSONObject());
-        } catch (Exception e) {
-        }
-
-        // console.log("starting logger...");
-        new Thread(logger).start();
-
+  //**************************************************************************
+  //** Constructor
+  //**************************************************************************
+    protected Neo4JTransactionEventListener(final GraphDatabaseService graphDatabaseService,
+        final LogService logsvc, Logger logger, Metadata metadata) {
+        this.logger = logger;
+        this.metadata = metadata;
     }
 
-    // **************************************************************************
-    // ** beforeCommit
-    // **************************************************************************
+
+  //**************************************************************************
+  //** beforeCommit
+  //**************************************************************************
     public Object beforeCommit(final TransactionData data, final Transaction transaction,
             final GraphDatabaseService databaseService) throws Exception {
 
-        if (meta != null && meta.isAvailable) {
-            try {
-                meta.handleEventBeforeCommit(data);
-            } catch (Throwable t) {
+//        if (meta!=null) meta.handleEventBeforeCommit(data);
+        if (logger==null && metadata==null) return null;
 
-            }
-        }
-
-        if (logger == null)
-            return null;
         String user = data.username();
 
         Iterable<Node> createdNodes = data.createdNodes();
         if (createdNodes != null) {
             Iterator<Node> it = createdNodes.iterator();
             if (it.hasNext())
-                logger.log("create", "nodes", getNodeInfo(it), user);
+                log("create", "nodes", getNodeInfo(it), user);
         }
 
         Iterable<Node> deletedNodes = data.deletedNodes();
         if (data.deletedNodes() != null) {
             Iterator<Node> it = deletedNodes.iterator();
             if (it.hasNext())
-                logger.log("delete", "nodes", getNodeInfo(it), user);
+                log("delete", "nodes", getNodeInfo(it), user);
         }
 
         Iterable<Relationship> createdRelationships = data.createdRelationships();
         if (createdRelationships != null) {
             Iterator<Relationship> it = createdRelationships.iterator();
             if (it.hasNext())
-                logger.log("create", "relationships", getRelationshipInfo(it), user);
+                log("create", "relationships", getRelationshipInfo(it), user);
         }
 
         Iterable<Relationship> deletedRelationships = data.deletedRelationships();
         if (data.deletedRelationships() != null) {
             Iterator<Relationship> it = deletedRelationships.iterator();
             if (it.hasNext())
-                logger.log("delete", "relationships", getRelationshipInfo(it), user);
+                log("delete", "relationships", getRelationshipInfo(it), user);
         }
 
         Iterable<LabelEntry> assignedLabels = data.assignedLabels();
         if (assignedLabels != null) {
             Iterator<LabelEntry> it = assignedLabels.iterator();
             if (it.hasNext())
-                logger.log("create", "labels", getLabelInfo(it), user);
+                log("create", "labels", getLabelInfo(it), user);
         }
 
         Iterable<LabelEntry> removedLabels = data.assignedLabels();
         if (removedLabels != null) {
             Iterator<LabelEntry> it = removedLabels.iterator();
             if (it.hasNext())
-                logger.log("delete", "labels", getLabelInfo(it), user);
+                log("delete", "labels", getLabelInfo(it), user);
         }
 
         Iterable<PropertyEntry<Node>> assignedNodeProperties = data.assignedNodeProperties();
         if (assignedNodeProperties != null) {
             Iterator<PropertyEntry<Node>> it = assignedNodeProperties.iterator();
             if (it.hasNext())
-                logger.log("create", "properties", getPropertyInfo(it), user);
+                log("create", "properties", getPropertyInfo(it), user);
         }
 
         Iterable<PropertyEntry<Node>> removedNodeProperties = data.removedNodeProperties();
         if (removedNodeProperties != null) {
             Iterator<PropertyEntry<Node>> it = removedNodeProperties.iterator();
             if (it.hasNext())
-                logger.log("delete", "properties", getPropertyInfo(it), user);
+                log("delete", "properties", getPropertyInfo(it), user);
         }
 
         Iterable<PropertyEntry<Relationship>> assignedRelationshipProperties = data.assignedRelationshipProperties();
         if (assignedRelationshipProperties != null) {
             Iterator<PropertyEntry<Relationship>> it = assignedRelationshipProperties.iterator();
             if (it.hasNext())
-                logger.log("create", "relationship_property", getRelationshipPropertyInfo(it), user);
+                log("create", "relationship_property", getRelationshipPropertyInfo(it), user);
         }
 
         Iterable<PropertyEntry<Relationship>> removedRelationshipProperties = data.removedRelationshipProperties();
         if (removedRelationshipProperties != null) {
             Iterator<PropertyEntry<Relationship>> it = removedRelationshipProperties.iterator();
             if (it.hasNext())
-                logger.log("delete", "relationship_property", getRelationshipPropertyInfo(it), user);
+                log("delete", "relationship_property", getRelationshipPropertyInfo(it), user);
         }
 
         return null;
     }
 
-    // **************************************************************************
-    // ** afterCommit
-    // **************************************************************************
+
+  //**************************************************************************
+  //** log
+  //**************************************************************************
+    public void log(String action, String type, JSONArray data, String user){
+        if (metadata!=null) metadata.log(action, type, data, user);
+        if (logger!=null) logger.log(action, type, data, user);
+    }
+
+
+  //**************************************************************************
+  //** afterCommit
+  //**************************************************************************
     public void afterCommit(final TransactionData data, final Object state,
             final GraphDatabaseService databaseService) {
 
-        if (meta != null && meta.isAvailable) {
-            try {
-                meta.handleEventAfterCommit(data);
-            } catch (Exception e) {
-            }
-        }
+//        if (metadata!=null){
+//            try{ metadata.handleEventAfterCommit(data); }
+//            catch(Exception e){}
+//        }
     }
 
-    // **************************************************************************
-    // ** afterRollback
-    // **************************************************************************
+  //**************************************************************************
+  //** afterRollback
+  //**************************************************************************
     public void afterRollback(final TransactionData data, final Object state,
             final GraphDatabaseService databaseService) {
     }
 
-    // **************************************************************************
-    // ** getNodeInfo
-    // **************************************************************************
+  //**************************************************************************
+  //** getNodeInfo
+  //**************************************************************************
     private JSONArray getNodeInfo(Iterator<Node> it) {
         JSONArray arr = new JSONArray();
 
@@ -239,33 +177,33 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
         return arr;
     }
 
-    // **************************************************************************
-    // ** getRelationshipInfo
-    // **************************************************************************
+  //**************************************************************************
+  //** getRelationshipInfo
+  //**************************************************************************
     private JSONArray getRelationshipInfo(Iterator<Relationship> it) {
         JSONArray arr = new JSONArray();
         return arr;
     }
 
-    // **************************************************************************
-    // ** getLabelInfo
-    // **************************************************************************
+  //**************************************************************************
+  //** getLabelInfo
+  //**************************************************************************
     private JSONArray getLabelInfo(Iterator<LabelEntry> it) {
         JSONArray arr = new JSONArray();
         return arr;
     }
 
-    // **************************************************************************
-    // ** getPropertyInfo
-    // **************************************************************************
+  //**************************************************************************
+  //** getPropertyInfo
+  //**************************************************************************
     private JSONArray getPropertyInfo(Iterator<PropertyEntry<Node>> it) {
         JSONArray arr = new JSONArray();
         return arr;
     }
 
-    // **************************************************************************
-    // ** getRelationshipPropertyInfo
-    // **************************************************************************
+  //**************************************************************************
+  //** getRelationshipPropertyInfo
+  //**************************************************************************
     private JSONArray getRelationshipPropertyInfo(Iterator<PropertyEntry<Relationship>> it) {
         JSONArray arr = new JSONArray();
         return arr;
