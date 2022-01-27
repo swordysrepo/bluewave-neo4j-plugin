@@ -21,19 +21,28 @@ are all optional.
 
 ```javascript
 {
-    "logger" : {
-        "path" : "/bluewave/logs"
+    "logging" : {
+
+        "local" : {
+            "path" : "/bluewave/logs"
+        },
+
+        "database" : {
+            "driver" : "H2",
+            "path" : "/bluewave/logs"
+        },
+
+        "webserver" : {
+            "host" : "http://bluewave.tech/graph/update",
+            "username" : "neo4j",
+            "password" : "password"
+        }
+
     },
 
-    "database" : {
-        "driver" : "H2",
-        "path" : "/bluewave/logs"
-    },
-
-    "webserver" : {
-        "host" : "http://bluewave.tech/graph/update",
-        "username" : "neo4j",
-        "password" : "password"
+    "metadata" : {
+        "node": "bluewave_metadata",
+        "localCache" : "/temp/neo4j"
     }
 }
 ```
