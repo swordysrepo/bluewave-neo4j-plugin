@@ -38,14 +38,22 @@ public class Metadata implements Runnable {
     private java.util.Timer syncTimer;
     private java.util.Timer refreshTimer;
 
-    private long refreshInterval = 24 * 60 * 60 * 1000; // 24 hours
-    private long refreshDelay = 24 * 60 * 60 * 1000; // 24 hours
+    // TEST
+    // private long refreshInterval = 24 * 60 * 60 * 1000; // 24 hours
+    // private long refreshDelay = 24 * 60 * 60 * 1000; // 24 hours
+    // private long syncInterval = 60 * 1000; // 60s
+    // private long synchDelay = 10 * 60 * 1000; // 10m    
 
-    private long syncInterval = 60 * 1000; // 60s
-    private long synchDelay = 10 * 60 * 1000; // 10m
+    private long refreshInterval = 3 * 60 * 1000; // 3m
+    private long refreshDelay = 3 * 60 * 1000; // 3m
+
+    private long syncInterval = 30 * 1000; // 30s
+    private long synchDelay = 10 * 1000; // 10s
 
     private CountsHandler countsHandler;
     private PropertiesHandler propertiesHandler;
+
+    public static long lastUpdate = 0;
 
   //**************************************************************************
   //** Constructor
@@ -157,7 +165,7 @@ public class Metadata implements Runnable {
         }
         syncTimer.scheduleAtFixedRate(new java.util.TimerTask() {
             public void run() {
-                if(propertiesHandler != null) propertiesHandler.sync();
+                if(propertiesHandler != null) propertiesHandler.sync(false);
             }
         }, synchDelay, syncInterval);
 
@@ -178,7 +186,7 @@ public class Metadata implements Runnable {
                     syncTimer = new java.util.Timer();
                     syncTimer.scheduleAtFixedRate(new java.util.TimerTask() {
                         public void run() {
-                            if(propertiesHandler != null) propertiesHandler.sync();
+                            if(propertiesHandler != null) propertiesHandler.sync(false);
                         }
                     }, synchDelay, syncInterval);
                 }
@@ -230,6 +238,16 @@ public class Metadata implements Runnable {
         console.log("*** ------- ERROR ------- *** " + message.toString());
     }
 
+  //**************************************************************************
+  //** isSafeToSync
+  //**************************************************************************    
+    public static boolean isSafeToSync() {
+        if(lastUpdate == 0) return true;
+
+        if(System.currentTimeMillis() - lastUpdate >= (60 * 1000)) return true;
+
+        return false;
+    }
 
   //**************************************************************************
   //** log
@@ -237,6 +255,7 @@ public class Metadata implements Runnable {
   /** Used to add an event to the queue
    */
     public void log(String action, String type, JSONArray data, String username){
+        lastUpdate = System.currentTimeMillis();
         //TODO: add event to pool
     }
 

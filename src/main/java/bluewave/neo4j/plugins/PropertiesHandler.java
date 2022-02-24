@@ -97,7 +97,7 @@ public class PropertiesHandler implements IHandleEvent {
     //***********************************************
     //** Updates the db node from the nodes in our map
     //***********************************************
-    public void sync() {
+    public void sync(boolean refresh) {
 
       //Create json format from map 
         JSONObject json = new JSONObject();
@@ -113,7 +113,7 @@ public class PropertiesHandler implements IHandleEvent {
             json.set(nodeKey, propertyList);
         }
 
-        save(json);
+        if(Metadata.isSafeToSync() || refresh) save(json);
 
     }
 
@@ -176,7 +176,7 @@ public class PropertiesHandler implements IHandleEvent {
               }
             
             //Save to db
-              sync();
+              sync(true);
                 
         }
         catch (Exception e) {
