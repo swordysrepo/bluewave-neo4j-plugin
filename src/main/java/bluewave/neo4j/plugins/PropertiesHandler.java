@@ -131,7 +131,7 @@ public class PropertiesHandler implements IHandleEvent {
             } else {
                 metadataNode = tx.createNode(label);
             }
-            console.log(json.toString());
+            
             metadataNode.setProperty(Metadata.KEY_PROPERTIES, json.toString());
             tx.commit();
         } catch (Exception e) {
