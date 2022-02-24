@@ -30,7 +30,7 @@ import javaxt.json.JSONArray;
 import javaxt.json.JSONObject;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class MetadataTest {
+public class CountsHandlerTest {
     public static final String GET_BLUEWAVE_METADATA_NODE_SQL = "MATCH (n:bluewave_metadata) return n";
     private static final Config driverConfig = Config.builder().withoutEncryption().build();
     private static Driver driver;
@@ -84,14 +84,14 @@ public class MetadataTest {
             Predicate<Object> hasTESTLABEL = l -> String.valueOf(l).equals("TESTLABEL");
             JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
-                JSONArray labels = countsJSONObject.get(key).get(Metadata.INDEX_LABELS).toJSONArray();
+                JSONArray labels = countsJSONObject.get(key).get(CountsHandler.INDEX_LABELS).toJSONArray();
                 boolean isTESTLABELPresent = StreamSupport
                         .stream(labels.spliterator(), false)
                         .filter(hasTESTLABEL)
                         .collect(Collectors.toList())
                         .size() > 0;
 
-                long relations = countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong();
+                long relations = countsJSONObject.get(key).get(CountsHandler.INDEX_RELATIONS).toLong();
                 if (isTESTLABELPresent) {
                     assertTrue(relations == 2);
                 } else {
@@ -133,7 +133,7 @@ public class MetadataTest {
             Node metaNode = (Node) record.get("n");
             JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
-                assertTrue(countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong() == 0);
+                assertTrue(countsJSONObject.get(key).get(CountsHandler.INDEX_RELATIONS).toLong() == 0);
             });
             tx.close();
         } catch (Exception e) {
@@ -184,14 +184,14 @@ public class MetadataTest {
             Predicate<Object> hasTESTLABEL = l -> String.valueOf(l).equals("TESTLABEL");
             JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
-                JSONArray labels = countsJSONObject.get(key).get(Metadata.INDEX_LABELS).toJSONArray();
+                JSONArray labels = countsJSONObject.get(key).get(CountsHandler.INDEX_LABELS).toJSONArray();
                 boolean isTESTLABELPresent = StreamSupport
                         .stream(labels.spliterator(), false)
                         .filter(hasTESTLABEL)
                         .collect(Collectors.toList())
                         .size() > 0;
 
-                long relations = countsJSONObject.get(key).get(Metadata.INDEX_RELATIONS).toLong();
+                long relations = countsJSONObject.get(key).get(CountsHandler.INDEX_RELATIONS).toLong();
                 if (isTESTLABELPresent) {
                     assertTrue(relations == 2);
                 } else {
@@ -256,7 +256,7 @@ public class MetadataTest {
             JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
 
-                JSONArray labels = countsJSONObject.get(key).get(Metadata.INDEX_LABELS).toJSONArray();
+                JSONArray labels = countsJSONObject.get(key).get(CountsHandler.INDEX_LABELS).toJSONArray();
                 boolean hasTestLabel2 = StreamSupport
                         .stream(labels.spliterator(), false)
                         .filter(isTESTLABEL2Present)
@@ -397,7 +397,7 @@ public class MetadataTest {
             JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
 
-                JSONArray labels = countsJSONObject.get(key).toJSONArray().get(Metadata.INDEX_LABELS).toJSONArray();
+                JSONArray labels = countsJSONObject.get(key).toJSONArray().get(CountsHandler.INDEX_LABELS).toJSONArray();
                 boolean hasLabelTESTNODE = StreamSupport
                         .stream(labels.spliterator(), false)
                         .filter(isTESTLABELPresent)
@@ -525,7 +525,7 @@ public class MetadataTest {
             console.log("ERROR: " + e);
         } finally {
             console.log("*** TESTS COMPLETE ***");
-            MetadataTest.driver.close();
+            CountsHandlerTest.driver.close();
             this.embeddedDatabaseServer.close();
         }
     }

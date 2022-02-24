@@ -219,7 +219,7 @@ public class Neo4JTransactionEventListenerExtensionFactory
   //**************************************************************************
     private Metadata getMetadata(JSONObject config, GraphDatabaseAPI db){
 
-        Metadata metadata = new Metadata(db);
+        Metadata metadata = new Metadata(db, false, true);
 
         try{ metadata.setNodeName(config.get("node").toString()); }
         catch(Exception e){}
