@@ -278,7 +278,7 @@ public class Metadata implements Runnable {
 
           //Update nodeMetadata.properties with attributes stored in the bluewave_metadata node
             String metadata = null;
-            rs = tx.execute("match (n:bluewave_metadata) return n.nodes");
+            rs = tx.execute("match (n:" + META_NODE_LABEL + ") return n.nodes");
             if (rs.hasNext()) metadata = rs.next().get("n.nodes").toString();
             if (metadata!=null){
                 JSONObject json = new JSONObject(metadata);
