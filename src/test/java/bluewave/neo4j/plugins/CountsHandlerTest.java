@@ -1,4 +1,5 @@
 package bluewave.neo4j.plugins;
+import static bluewave.neo4j.plugins.CountsHandler.KEY_COUNTS;
 
 import static javaxt.utils.Console.console;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -82,7 +83,7 @@ public class CountsHandlerTest {
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
             Predicate<Object> hasTESTLABEL = l -> String.valueOf(l).equals("TESTLABEL");
-            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
                 JSONArray labels = countsJSONObject.get(key).get(CountsHandler.INDEX_LABELS).toJSONArray();
                 boolean isTESTLABELPresent = StreamSupport
@@ -131,7 +132,7 @@ public class CountsHandlerTest {
             assertTrue(result.hasNext());
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
-            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
                 assertTrue(countsJSONObject.get(key).get(CountsHandler.INDEX_RELATIONS).toLong() == 0);
             });
@@ -182,7 +183,7 @@ public class CountsHandlerTest {
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
             Predicate<Object> hasTESTLABEL = l -> String.valueOf(l).equals("TESTLABEL");
-            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
                 JSONArray labels = countsJSONObject.get(key).get(CountsHandler.INDEX_LABELS).toJSONArray();
                 boolean isTESTLABELPresent = StreamSupport
@@ -253,7 +254,7 @@ public class CountsHandlerTest {
             Predicate<Object> isTESTLABELPresent = l -> String.valueOf(l).equals("TESTLABEL");
             Predicate<Object> isTESTLABEL2Present = l -> String.valueOf(l).equals("TESTLABEL2");
 
-            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
 
                 JSONArray labels = countsJSONObject.get(key).get(CountsHandler.INDEX_LABELS).toJSONArray();
@@ -394,7 +395,7 @@ public class CountsHandlerTest {
              * (n:bluewave_metadata{"counts":{"534657143":[["label1","labeln"], 1, 15, 4,
              * 2],"7989553324":[["label1","labeln"], 1, 13, 2, 3]}})
              */
-            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+            JSONObject countsJSONObject = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
             countsJSONObject.keySet().forEach(key -> {
 
                 JSONArray labels = countsJSONObject.get(key).toJSONArray().get(CountsHandler.INDEX_LABELS).toJSONArray();
@@ -429,7 +430,7 @@ public class CountsHandlerTest {
 
     /**
      * Prints out the contents of bluewave_metadata node
-     * 
+     *
      * @param dbService
      */
     private void printResultsToConsole(GraphDatabaseService dbService) {
@@ -448,7 +449,7 @@ public class CountsHandlerTest {
             console.log("** bluewave_metadata node contents: "
                     // + " --properties--:> " +
                     // metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
-                    + "\n --counts--:> " + metaNode.getProperties(Metadata.KEY_COUNTS).toString() + "\n");
+                    + "\n --counts--:> " + metaNode.getProperties(KEY_COUNTS).toString() + "\n");
             tx.close();
         } catch (Exception e) {
             fail("ERROR -> " + e);
@@ -460,7 +461,7 @@ public class CountsHandlerTest {
         try {
             /**
              * Load test data.
-             * 
+             *
              */
             final String createSql = "CREATE (n1{prop1:'val1'})," // One node with one property
                     + " (n2:TESTNODE{prop1:'val1', prop2:'val2'})," // One node with a label and 2 properties

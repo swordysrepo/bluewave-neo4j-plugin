@@ -4,9 +4,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Result;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.event.TransactionData;
 
 import javaxt.json.*;
@@ -18,55 +16,82 @@ import static javaxt.utils.Console.console;
 //******************************************************************************
 /**
  *   Used to create and update metadata for the graph. Metadata is stored in a
- *   metadata node. Optionally, metadata can be cached to a local file for
- *   faster startup.
+ *   metadata node.
  *
  ******************************************************************************/
 
 public class Metadata implements Runnable {
 
-    private static List pool = new LinkedList();
-    private ConcurrentHashMap<String, Object> cache;
-    private javaxt.io.Directory cacheDir;
 
+    private ConcurrentHashMap<String, NodeMetadata> nodes;
     public static String META_NODE_LABEL = "bluewave_metadata";
-    public static final String KEY_COUNTS = "counts";
-    public static final String KEY_PROPERTIES = "nodes";
-    
     private GraphDatabaseService db;
+    private AtomicLong lastUpdate;
 
-    private java.util.Timer syncTimer;
-    private java.util.Timer refreshTimer;
+    private static final String nodesQuery =
+    "MATCH (n) RETURN\n" +
+    "distinct labels(n) as labels,\n" +
+    "count(labels(n)) as count,\n" +
+    "sum(size((n) <--())) as relations;";
 
-    // TEST
-    // private long refreshInterval = 24 * 60 * 60 * 1000; // 24 hours
-    // private long refreshDelay = 24 * 60 * 60 * 1000; // 24 hours
-    // private long syncInterval = 60 * 1000; // 60s
-    // private long synchDelay = 10 * 60 * 1000; // 10m    
+    private String propertiesQuery =
+    "MATCH(n)\n" +
+    "WITH LABELS(n) AS labels , KEYS(n) AS keys\n" +
+    "UNWIND labels AS label\n" +
+    "UNWIND keys AS key\n" +
+    "RETURN DISTINCT label as node, COLLECT(DISTINCT key) AS properties\n" +
+    "ORDER BY label";
 
-    private long refreshInterval = 3 * 60 * 1000; // 3m
-    private long refreshDelay = 3 * 60 * 1000; // 3m
 
-    private long syncInterval = 30 * 1000; // 30s
-    private long synchDelay = 10 * 1000; // 10s
-
-    private CountsHandler countsHandler;
-    private PropertiesHandler propertiesHandler;
-
-    public static long lastUpdate = 0;
 
   //**************************************************************************
   //** Constructor
   //**************************************************************************
     public Metadata(GraphDatabaseService databaseService, boolean recordCounts, boolean recordProperties) {
-        cache = new ConcurrentHashMap<>();
+
+        nodes = new ConcurrentHashMap<>();
         db = databaseService;
+        lastUpdate = new AtomicLong(0L);
 
-        syncTimer = new java.util.Timer();
-        refreshTimer = new java.util.Timer();
 
-        if(recordCounts) countsHandler = new CountsHandler(db);
-        if(recordProperties) propertiesHandler = new PropertiesHandler(db);
+      //Sync recent updates made to the nodes map every 30 seconds
+        {
+            long interval = 30*1000; //30 seconds
+            java.util.Timer timer = new java.util.Timer();
+            timer.scheduleAtFixedRate( new java.util.TimerTask(){
+                public void run(){
+                    synchronized (lastUpdate){
+                        if (lastUpdate.get()==0) return;
+                        try{
+                            if ((System.currentTimeMillis()-lastUpdate.get())>interval){
+                                saveNodes();
+                                lastUpdate.set(0);
+                            }
+                        }
+                        catch(Exception e){}
+                    }
+                }
+            }, 30*1000, interval);
+        }
+
+
+
+      //Sync all nodes every 24 hours
+        {
+            javaxt.utils.Date startDate = new javaxt.utils.Date();
+            startDate.removeTimeStamp(); startDate.add(26, "hours"); //2AM
+            long interval = 24*60*60*1000; //24 hours
+            java.util.Timer timer = new java.util.Timer();
+            timer.scheduleAtFixedRate( new java.util.TimerTask(){
+                public void run(){
+                    synchronized (lastUpdate){
+                        if (lastUpdate.get()==0){
+                            init();
+                        }
+                    }
+                }
+            }, startDate.getDate(), interval);
+        }
     }
 
 
@@ -77,25 +102,18 @@ public class Metadata implements Runnable {
    */
     public void init() {
         long startTime = System.currentTimeMillis();
-        
-        try {
-            if(propertiesHandler != null) propertiesHandler.init();
-        } catch(Exception e) {
-            e.printStackTrace();
-        }
-
         try{
-            getNodes();
-            getProperties();
+            updateNodes();
+            saveNodes();
         }
         catch(Exception e){
+            e.printStackTrace();
         }
         long ellapsedTime = System.currentTimeMillis()-startTime;
         console.log("Fetched nodes and properties in " + ellapsedTime + "ms");
-        //TODO: unsure the timer task interval is slower than the ellapsedTime
 
 
-        startTimers();
+        lastUpdate.set(0);
     }
 
 
@@ -109,36 +127,10 @@ public class Metadata implements Runnable {
 
 
   //**************************************************************************
-  //** setCacheDirectory
-  //**************************************************************************
-    public void setCacheDirectory(javaxt.io.Directory dir){
-        cacheDir = dir;
-    }
-
-
-  //**************************************************************************
   //** run
   //**************************************************************************
     public void run() {
-        while (true) {
 
-            Object obj;
-            synchronized (pool) {
-                while (pool.isEmpty()) {
-                  try {
-                    pool.wait();
-                  }
-                  catch (InterruptedException e) {
-                      break;
-                  }
-                }
-                obj = pool.remove(0);
-            }
-
-            if (obj==null) return;
-
-            //TODO: updateCache()
-        }
     }
 
 
@@ -146,69 +138,9 @@ public class Metadata implements Runnable {
   //** stop
   //**************************************************************************
     public void stop(){
-        cancelTimers();
-
-        synchronized (pool) {
-            pool.clear();
-            pool.add(0, null);
-            pool.notifyAll();
-        }
+        //cancelTimers();
     }
 
-
-  //**************************************************************************
-  //** start timer tasks
-  //**************************************************************************
-    private void startTimers() {
-        if (syncTimer == null) {
-            syncTimer = new java.util.Timer();
-        }
-        syncTimer.scheduleAtFixedRate(new java.util.TimerTask() {
-            public void run() {
-                if(propertiesHandler != null) propertiesHandler.sync(false);
-            }
-        }, synchDelay, syncInterval);
-
-        if (refreshTimer == null) {
-            refreshTimer = new java.util.Timer();
-        }
-        refreshTimer.scheduleAtFixedRate(new java.util.TimerTask() {
-            public void run() {
-                try {
-                    try {
-                        if(syncTimer != null) {
-                            syncTimer.cancel();
-                            syncTimer = null;
-                        }
-                    }catch(Exception e){}
-                    if(propertiesHandler != null) propertiesHandler.refresh();
-                }finally {
-                    syncTimer = new java.util.Timer();
-                    syncTimer.scheduleAtFixedRate(new java.util.TimerTask() {
-                        public void run() {
-                            if(propertiesHandler != null) propertiesHandler.sync(false);
-                        }
-                    }, synchDelay, syncInterval);
-                }
-            }
-        }, refreshDelay, refreshInterval);
-    }
-
-
-  //**************************************************************************
-  //** cancel Sync Timer
-  //**************************************************************************
-    private void cancelTimers() {
-        if (syncTimer != null) {
-            syncTimer.cancel();
-            syncTimer = null;
-        }
-    
-        if (refreshTimer != null) {
-            refreshTimer.cancel();
-            refreshTimer = null;
-        }
-    }
 
   //**************************************************************************
   //** handleEventBeforeCommit
@@ -223,28 +155,15 @@ public class Metadata implements Runnable {
     public synchronized void handleEventAfterCommit(final TransactionData data) throws Exception {
     }
 
-    public void handleEvent(TransactionData data) {
 
-
-        try {
-            if(countsHandler != null) countsHandler.handleEvent(data);
-            if(propertiesHandler != null) propertiesHandler.handleEvent(data);
-        }catch(Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void e(Object message) {
-        console.log("*** ------- ERROR ------- *** " + message.toString());
-    }
 
   //**************************************************************************
   //** isSafeToSync
-  //**************************************************************************    
+  //**************************************************************************
     public static boolean isSafeToSync() {
-        if(lastUpdate == 0) return true;
-
-        if(System.currentTimeMillis() - lastUpdate >= (60 * 1000)) return true;
+//        if(lastUpdate == 0) return true;
+//
+//        if(System.currentTimeMillis() - lastUpdate >= (60 * 1000)) return true;
 
         return false;
     }
@@ -255,25 +174,11 @@ public class Metadata implements Runnable {
   /** Used to add an event to the queue
    */
     public void log(String action, String type, JSONArray data, String username){
-        lastUpdate = System.currentTimeMillis();
-        //TODO: add event to pool
-    }
-
-
-  //**************************************************************************
-  //** updateCache
-  //**************************************************************************
-  /** Used to update the cached nodes and properties
-   */
-    private void updateCache(String action, String type, JSONArray data, String username){
 
         if ((action.equals("create") || action.equals("delete")) && (type.equals("nodes") || type.equals("relationships")))
-        synchronized(cache){
+        synchronized(nodes){
             try{
 
-              //Update nodes
-                JSONArray nodes = getNodes();
-                boolean updateFile = false;
                 for (int i=0; i<data.length(); i++){
                     JSONArray entry = data.get(i).toJSONArray();
                     if (entry.isEmpty()) continue;
@@ -286,246 +191,231 @@ public class Metadata implements Runnable {
                         labels.add(label);
                     }
 
-                    boolean foundMatch = false;
-                    for (int j=0; j<nodes.length(); j++){
-                        JSONObject node = nodes.get(j).toJSONObject();
 
-                        String label = node.get("node").toString();
-                        if (label!=null && labels.contains(label.toLowerCase())){
-                            if (type.equals("nodes")){
-                                AtomicLong count = (AtomicLong) node.get("count").toObject();
-                                Long a = count.get();
-                                if (action.equals("create")){
-                                    count.incrementAndGet();
-                                }
-                                else{
-                                    Long n = count.decrementAndGet();
-                                    if (n==0){
-                                        //TODO: Remove node
-                                    }
-                                }
-                                Long b = count.get();
-                                console.log((b>a ? "increased " : "decreased ") + label + " to " + b);
-                                updateFile = true;
-                            }
-                            else if (type.equals("relationships")){
-                                AtomicLong relations = (AtomicLong) node.get("relations").toObject();
-                            }
 
-                            foundMatch = true;
-                            break;
+                    if (type.equals("nodes")){
+                        if (labels.contains(META_NODE_LABEL)) continue;
+
+                        NodeMetadata nodeMetadata = null;
+                        for (String label : labels){
+                            nodeMetadata = nodes.get(label);
+                            if (nodeMetadata!=null) break;
                         }
+
+
+                        if (nodeMetadata==null){
+                            nodeMetadata = new NodeMetadata();
+                            nodeMetadata.count.incrementAndGet();
+                            nodes.put(labels.iterator().next(), nodeMetadata);
+                        }
+                        else{
+                            if (action.equals("create")){
+                                nodeMetadata.count.incrementAndGet();
+                            }
+                            else{
+                                Long n = nodeMetadata.count.decrementAndGet();
+                                if (n==0){
+                                    //TODO: Remove node
+                                }
+                            }
+                        }
+
+
+                        lastUpdate.set(System.currentTimeMillis());
+
+                    }
+                    else if (type.equals("relationships")){
+                        //AtomicLong relations = (AtomicLong) node.get("relations").toObject();
                     }
 
-
-                    if (!foundMatch){
-                        if (action.equals("create") && (type.equals("nodes"))){
-                            console.log("add node!");
-                            String label = entry.get(1).toString();
-                            AtomicLong count = new AtomicLong(1);
-                            AtomicLong relations = new AtomicLong(0);
-                            JSONObject json = new JSONObject();
-                            json.set("node", label);
-                            json.set("count", count);
-                            json.set("relations", relations);
-                            json.set("id", label);
-                            nodes.add(json);
-                            updateFile = true;
-                        }
-                    }
                 }
-
-
-
-
-
-
-              //TODO: Update properties
-
-
-
-              //TODO: Update network
-
-
-                cache.notifyAll();
-
             }
             catch(Exception e){
                 e.printStackTrace();
             }
+
+
+            nodes.notifyAll();
+
         }
     }
 
 
-    private static final String nodesQuery =
-    "MATCH (n) RETURN\n" +
-    "distinct labels(n) as labels,\n" +
-    "count(labels(n)) as count,\n" +
-    "sum(size((n) <--())) as relations;";
+  //**************************************************************************
+  //** updateNodes
+  //**************************************************************************
+    private void updateNodes() throws Exception {
 
+        HashMap<String, NodeMetadata> nodes = new HashMap<>();
+
+        try (Transaction tx = db.beginTx()) {
+
+
+          //Get nodes and properties from the database
+            Result rs = tx.execute(propertiesQuery);
+            while (rs.hasNext()){
+                Map<String, Object> r = rs.next();
+                Object node = r.get("node");
+                Object props = r.get("properties");
+                if (node==null) continue;
+
+                String nodeName = node.toString().toLowerCase();
+                if (nodeName.equals(META_NODE_LABEL)) continue;
+
+                NodeMetadata nodeMetadata = new NodeMetadata();
+
+
+                if (props!=null){
+                    for (Object p : (List) props){
+                        String propertyName = p.toString();
+                        nodeMetadata.properties.put(propertyName, new PropertyMetadata());
+                    }
+                }
+
+                nodes.put(nodeName, nodeMetadata);
+            }
+
+
+          //Update nodeMetadata.properties with attributes stored in the bluewave_metadata node
+            String metadata = null;
+            rs = tx.execute("match (n:bluewave_metadata) return n.nodes");
+            if (rs.hasNext()) metadata = rs.next().get("n.nodes").toString();
+            if (metadata!=null){
+                JSONObject json = new JSONObject(metadata);
+                Iterator<String> it = json.keySet().iterator();
+                while (it.hasNext()){
+                    String nodeName = it.next();
+                    JSONObject nodeMetadata = json.get(nodeName).toJSONObject();
+                    JSONObject properties = nodeMetadata.get("properties").toJSONObject();
+                    Iterator<String> i2 = properties.keySet().iterator();
+                    while (i2.hasNext()){
+                        String propertyName = i2.next();
+                        JSONObject propertyMetadata = properties.get(propertyName).toJSONObject();
+                        String type = propertyMetadata.get("type").toString();
+                        PropertyMetadata pm = nodes.get(nodeName).properties.get(propertyName);
+                        if (type!=null) pm.type = type;
+                    }
+                }
+            }
+
+
+          //Update counts
+            rs = tx.execute(nodesQuery);
+            while (rs.hasNext()){
+                Map<String, Object> r = rs.next();
+                JSONArray labels = new JSONArray(r.get("labels").toString());
+                String nodeName = labels.isEmpty()? "" : labels.get(0).toString();
+                if (nodeName.equals(META_NODE_LABEL)) continue;
+
+                Long count = Long.parseLong(r.get("count").toString());
+                Long relations = Long.parseLong(r.get("relations").toString());
+
+                NodeMetadata nodeMetadata = nodes.get(nodeName.toLowerCase());
+                if (nodeMetadata!=null){
+                    nodeMetadata.count.set(count);
+                    nodeMetadata.relations.set(relations);
+                }
+            }
+        }
+        catch (Exception e) {
+            throw e;
+        }
+
+
+
+        synchronized(this.nodes){
+            this.nodes.clear();
+            Iterator<String> it = nodes.keySet().iterator();
+            while (it.hasNext()){
+                String nodeName = it.next();
+                NodeMetadata nodeMetadata = nodes.get(nodeName);
+                this.nodes.put(nodeName, nodeMetadata);
+            }
+
+            this.nodes.notify();
+        }
+    }
 
 
   //**************************************************************************
-  //** getNodes
+  //** saveNodes
   //**************************************************************************
-    private JSONArray getNodes() throws Exception {
+    private void saveNodes() throws Exception {
 
-        synchronized(cache){
-            Object obj = cache.get("nodes");
-            if (obj!=null){
-                return (JSONArray) obj;
+        JSONObject json = new JSONObject();
+        synchronized(nodes){
+            Iterator<String> it = nodes.keySet().iterator();
+            while (it.hasNext()){
+                String nodeName = it.next();
+                NodeMetadata nodeMetadata = nodes.get(nodeName);
+                json.set(nodeName, nodeMetadata.toJSON());
+            }
+        }
+        //System.out.println(json.toString(4));
+
+
+        Label label = Label.label(META_NODE_LABEL);
+        try (Transaction tx = db.beginTx()) {
+            ResourceIterator<Node> nodesIterator = tx.findNodes(label);
+            Node metadataNode;
+            if (nodesIterator.hasNext()) {
+                metadataNode = nodesIterator.next();
             }
             else{
-                JSONArray arr = new JSONArray();
-
-                javaxt.io.File f = null;
-                if (cacheDir!=null){
-                    f = new javaxt.io.File(cacheDir, "nodes.json");
-                }
-
-                if (f!=null && f.exists()){
-                    arr = new JSONArray(f.getText());
-                    for (int i=0; i<arr.length(); i++){
-                        JSONObject node = arr.get(i).toJSONObject();
-                        Long c = node.get("count").toLong();
-                        Long r = node.get("relations").toLong();
-                        AtomicLong count = new AtomicLong(c==null ? 0 : c);
-                        AtomicLong relations = new AtomicLong(r==null ? 0 : r);
-                        node.set("count", count);
-                        node.set("relations", relations);
-                    }
-                }
-                else{
-
-                    try (Transaction tx = db.beginTx()) {
-
-                      //Execute query
-                        Result rs = tx.execute(nodesQuery);
-                        while (rs.hasNext()){
-                            Map<String, Object> r = rs.next();
-                            JSONArray labels = new JSONArray(r.get("labels").toString());
-                            String label = labels.isEmpty()? "" : labels.get(0).toString();
-
-                            Long _count = Long.parseLong(r.get("count").toString());
-                            AtomicLong count = new AtomicLong(_count);
-
-                            Long _relations = Long.parseLong(r.get("relations").toString());
-                            AtomicLong relations = new AtomicLong(_relations);
-
-                            JSONObject json = new JSONObject();
-                            json.set("node", label);
-                            json.set("count", count);
-                            json.set("relations", relations);
-                            json.set("id", label);
-                            arr.add(json);
-                        }
-
-
-                      //Write file
-                        if (f!=null){
-                            f.create();
-                            f.write(arr.toString());
-                        }
-                    }
-                    catch (Exception e) {
-                        e("executeNodesQuery: " + e);
-                        throw e;
-                    }
-                }
-
-
-
-              //Update cache
-                cache.put("nodes", arr);
-                cache.notify();
-
-
-                return arr;
-
+                metadataNode = tx.createNode(label);
             }
+
+            metadataNode.setProperty("nodes", json.toString());
+            tx.commit();
+        }
+        catch (Exception e) {
+            throw e;
         }
     }
 
-    private String propertiesQuery =
-    "MATCH(n)\n" +
-    "WITH LABELS(n) AS labels , KEYS(n) AS keys\n" +
-    "UNWIND labels AS label\n" +
-    "UNWIND keys AS key\n" +
-    "RETURN DISTINCT label as node, COLLECT(DISTINCT key) AS properties\n" +
-    "ORDER BY label";
-
 
   //**************************************************************************
-  //** getProperties
+  //** NodeMetadata
   //**************************************************************************
-    private JSONArray getProperties() throws Exception {
-        synchronized(cache){
-            Object obj = cache.get("properties");
-            if (obj!=null){
-                return (JSONArray) obj;
+    private class NodeMetadata {
+        private ConcurrentHashMap<String, PropertyMetadata> properties;
+        private AtomicLong count;
+        private AtomicLong relations;
+        public NodeMetadata(){
+            properties = new ConcurrentHashMap<>();
+            count = new AtomicLong(0L);
+            relations = new AtomicLong(0L);
+        }
+        public JSONObject toJSON(){
+            JSONObject json = new JSONObject();
+            json.set("count", count.get());
+            json.set("relations", relations.get());
+
+            JSONObject props = new JSONObject();
+            Iterator<String> it = properties.keySet().iterator();
+            while (it.hasNext()){
+                String propertyName = it.next();
+                PropertyMetadata propertyMetadata = properties.get(propertyName);
+                props.set(propertyName, propertyMetadata.toJSON());
             }
-            else{
-                JSONArray arr = new JSONArray();
+            json.set("properties", props);
 
-                javaxt.io.File f = null;
-                if (cacheDir!=null){
-                    f = new javaxt.io.File(cacheDir, "properties.json");
-                }
-
-                if (f!=null && f.exists()){
-                    arr = new JSONArray(f.getText());
-                }
-                else{
-
-                    try (Transaction tx = db.beginTx()) {
-
-                      //Execute query
-                        Result rs = tx.execute(propertiesQuery);
-                        while (rs.hasNext()){
-                            Map<String, Object> r = rs.next();
-                            Object node = r.get("node");
-                            Object props = r.get("properties");
-                            if (node==null) continue;
-
-
-                            JSONObject json = new JSONObject();
-                            json.set("node", node);
-                            JSONArray properties = new JSONArray();
-                            json.set("properties", properties);
-                            if (props!=null){
-                                for (Object p : (List) props){
-                                    properties.add(p);
-                                }
-                            }
-                            arr.add(json);
-                        }
-
-
-
-                      //Write file
-                        if (f!=null){
-                            f.create();
-                            f.write(arr.toString());
-                        }
-                    }
-                    catch (Exception e) {
-                        e.printStackTrace();
-                        e("executePropertiesQuery: " + e);
-                        throw e;
-                    }
-                }
-
-
-
-              //Update cache
-                cache.put("properties", arr);
-                cache.notify();
-
-
-                return arr;
-
-            }
+            return json;
         }
     }
 
+
+  //**************************************************************************
+  //** PropertyMetadata
+  //**************************************************************************
+    private class PropertyMetadata {
+        private String type = "Object";
+        private boolean isIndexed = false;
+        public JSONObject toJSON(){
+            JSONObject json = new JSONObject();
+            json.set("type", type);
+            json.set("isIndexed", isIndexed);
+            return json;
+        }
+    }
 }

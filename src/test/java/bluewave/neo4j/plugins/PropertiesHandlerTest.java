@@ -41,10 +41,10 @@ public class PropertiesHandlerTest {
         console.log("** test_init()                                                                **");
         console.log("**                                                                            **");
         console.log("**                                                                            **");
-        
+
         //
         // At this point, the data has been added.
-        // Call init() which will call refresh() to query 
+        // Call init() which will call refresh() to query
         // the db and save the results to the metadata node in the db.
         //
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
@@ -54,11 +54,11 @@ public class PropertiesHandlerTest {
         try {
             console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
             TimeUnit.SECONDS.sleep(300);
-            
+
         }catch(Exception e) {
-          console.log(e);  
+          console.log(e);
         } finally {
-            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));  
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
         }
 
         //
@@ -73,7 +73,7 @@ public class PropertiesHandlerTest {
 
     /**
      * Prints out the contents of bluewave_metadata node
-     * 
+     *
      * @param dbService
      */
     private void printResultsToConsole(GraphDatabaseService dbService, String sql) {
@@ -91,21 +91,21 @@ public class PropertiesHandlerTest {
 
             console.log("** bluewave_metadata node contents: "
                     // + " --properties--:> " +
-                    + metaNode.getProperties(Metadata.KEY_PROPERTIES).toString()
-                    // + "\n --counts--:> " + metaNode.getProperties(Metadata.KEY_COUNTS).toString() 
+                    + metaNode.getProperties(PropertiesHandler.KEY_PROPERTIES).toString()
+                    // + "\n --counts--:> " + metaNode.getProperties(KEY_COUNTS).toString()
                     + "\n");
             tx.close();
         } catch (Exception e) {
             fail("ERROR -> " + e);
         }
-    }    
+    }
 
     @BeforeEach
     void initializeNeo4j() {
         try {
             /**
              * Load test data.
-             * 
+             *
              */
             final String createSql = "CREATE (n1{prop1:'val1'})," // One node with one property
                     + " (n2:TESTNODE{prop1:'val1', prop2:'val2'})," // One node with a label and 2 properties
@@ -173,5 +173,5 @@ public class PropertiesHandlerTest {
             PropertiesHandlerTest.driver.close();
             this.embeddedDatabaseServer.close();
         }
-    }    
+    }
 }

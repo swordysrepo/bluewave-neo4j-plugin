@@ -19,9 +19,11 @@ import javaxt.json.JSONObject;
 import static javaxt.utils.Console.console;
 
 public class PropertiesHandler implements IHandleEvent {
-    
+
     ConcurrentHashMap<String, ConcurrentHashMap<String, String>> metaPropertiesMap;
     GraphDatabaseService db;
+
+    public static final String KEY_PROPERTIES = "nodes";
 
     public PropertiesHandler(GraphDatabaseService db) {
         this.db = db;
@@ -50,13 +52,13 @@ public class PropertiesHandler implements IHandleEvent {
         while(itProps.hasNext()) {
             tempProp.put(itProps.next().toString(), "Object");
         }
-        metaPropertiesMap.put(json.get("node").toString(), tempProp); 
+        metaPropertiesMap.put(json.get("node").toString(), tempProp);
     }
 
 
     //***********************************************
     //** Adds an array of new nodes
-    //***********************************************    
+    //***********************************************
     public void addAll(JSONArray arr) {
         if(arr.isEmpty()) return;
         Iterator it = arr.iterator();
@@ -69,7 +71,7 @@ public class PropertiesHandler implements IHandleEvent {
             while(itProps.hasNext()) {
                 tempProp.put(itProps.next().toString(), "Object");
             }
-            metaPropertiesMap.put(json.get("node").toString(), tempProp); 
+            metaPropertiesMap.put(json.get("node").toString(), tempProp);
         }
     }
 
@@ -89,7 +91,7 @@ public class PropertiesHandler implements IHandleEvent {
     //         List<String> properties = (List<String>) json.get("properties");
     //         for(String prop: properties) {
     //             existingNodePropertiesValue.put(prop, "Object");
-    //         } 
+    //         }
     //         metaPropertiesMap.put(json.get("node").toString(), existingNodePropertiesValue);
     //     }
     // }
@@ -99,7 +101,7 @@ public class PropertiesHandler implements IHandleEvent {
     //***********************************************
     public void sync(boolean refresh) {
 
-      //Create json format from map 
+      //Create json format from map
         JSONObject json = new JSONObject();
         for(String nodeKey : metaPropertiesMap.keySet()) {
             ConcurrentHashMap<String, String>nodePropertiesValue = metaPropertiesMap.get(nodeKey);
@@ -119,7 +121,7 @@ public class PropertiesHandler implements IHandleEvent {
 
     //***********************************************
     //** Saves the json to the db node
-    //***********************************************    
+    //***********************************************
     public void save(JSONObject json) {
       //Save to db
         Label label = Label.label(Metadata.META_NODE_LABEL);
@@ -131,8 +133,8 @@ public class PropertiesHandler implements IHandleEvent {
             } else {
                 metadataNode = tx.createNode(label);
             }
-            
-            metadataNode.setProperty(Metadata.KEY_PROPERTIES, json.toString());
+
+            metadataNode.setProperty(KEY_PROPERTIES, json.toString());
             tx.commit();
         } catch (Exception e) {
             e(e);
@@ -142,7 +144,7 @@ public class PropertiesHandler implements IHandleEvent {
 
     //***********************************************
     //** Runs the query and saves the output in our map
-    //***********************************************    
+    //***********************************************
     public void refresh() {
         String propertiesQuery =
         "MATCH(n)\n" +
@@ -170,14 +172,14 @@ public class PropertiesHandler implements IHandleEvent {
                   if (props!=null){
                       for (Object p : (List) props){
                         properties.add(p);
-                      }   
+                      }
                   }
                   add(json);
               }
-            
+
             //Save to db
               sync(true);
-                
+
         }
         catch (Exception e) {
             e(e);
@@ -195,5 +197,5 @@ public class PropertiesHandler implements IHandleEvent {
         console.log("*** ------- ERROR ------- *** " + message.toString());
     }
 
-    
+
 }

@@ -224,9 +224,6 @@ public class Neo4JTransactionEventListenerExtensionFactory
         try{ metadata.setNodeName(config.get("node").toString()); }
         catch(Exception e){}
 
-        try{ metadata.setCacheDirectory(new javaxt.io.Directory(config.get("localCache").toString())); }
-        catch(Exception e){}
-
         return metadata;
     }
 }

@@ -25,15 +25,16 @@ import javaxt.json.JSONValue;
 import static javaxt.utils.Console.console;
 
 public class CountsHandler implements IHandleEvent{
-    
+
     private GraphDatabaseService db;
-    
-    
+
+    public static final String KEY_COUNTS = "counts";
+
     public static final int INDEX_LABELS = 0;
     private static final int INDEX_COUNT = 1;
     public static final int INDEX_RELATIONS = 2;
     private static final int INDEX_TRANSACTION_ID = 3;
-    private static final int INDEX_NODE_ID = 4;    
+    private static final int INDEX_NODE_ID = 4;
 
     public CountsHandler(GraphDatabaseService db) {
         this.db = db;
@@ -46,7 +47,7 @@ public class CountsHandler implements IHandleEvent{
 
     //***********************************************
     //** Saves the json to the db node
-    //*********************************************** 
+    //***********************************************
     public void save(JSONObject json) {
         Label label = Label.label(Metadata.META_NODE_LABEL);
         try (Transaction tx = db.beginTx()) {
@@ -57,7 +58,7 @@ public class CountsHandler implements IHandleEvent{
             } else {
                 metadataNode = tx.createNode(label);
             }
-            metadataNode.setProperty(Metadata.KEY_COUNTS, json.toString());
+            metadataNode.setProperty(KEY_COUNTS, json.toString());
             tx.commit();
         } catch (Exception e) {
             e("init: " + e);
@@ -92,7 +93,7 @@ public class CountsHandler implements IHandleEvent{
         } catch (Exception e) {
             e("deletedRelationshipsEvent: " + e);
         }
-      
+
       //***********************************************
       //** Created Nodes
       //***********************************************
@@ -224,7 +225,7 @@ public class CountsHandler implements IHandleEvent{
     try (Transaction tx = db.beginTx()) {
         Node metaNode = getMetadataNodeData(tx);
         metaNodeId = metaNode.getId();
-        metaCountsNode = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+        metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
     } catch (Exception e) {
         e("deletedNodesEventNew getMetadataNodeData: " + e);
         return;
@@ -275,7 +276,7 @@ public class CountsHandler implements IHandleEvent{
     if (somethingToSave) {
           saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
-}    
+}
 
 
   //**************************************************************************
@@ -289,7 +290,7 @@ public class CountsHandler implements IHandleEvent{
     try (Transaction tx = db.beginTx()) {
         metaNode = getMetadataNodeData(tx);
         metaNodeId = metaNode.getId();
-        metaCountsNode = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+        metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
     } catch (Exception e) {
         e("createdNodesEventNew:  foreach2: " + e);
     }
@@ -345,7 +346,7 @@ public class CountsHandler implements IHandleEvent{
     try (Transaction tx = db.beginTx()) {
         Node metaNode = getMetadataNodeData(tx);
         metaNodeId = metaNode.getId();
-        metaCountsNode = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+        metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
     } catch (Exception e) {
         e("assignedLabelEventNew getMetadataNodeData: " + e);
         return;
@@ -445,7 +446,7 @@ public class CountsHandler implements IHandleEvent{
         }
     }
     saveBluewaveMeta_NodesAndCounts(metaCountsNode);
-}  
+}
 
 
   //**************************************************************************
@@ -474,7 +475,7 @@ public class CountsHandler implements IHandleEvent{
     try (Transaction tx = db.beginTx()) {
         Node metaNode = getMetadataNodeData(tx);
         metaNodeId = metaNode.getId();
-        metaCountsNode = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+        metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
     } catch (Exception e) {
         e("removedLabelEventNew getMetadataNodeData: " + e);
         return;
@@ -568,7 +569,7 @@ public class CountsHandler implements IHandleEvent{
     try (Transaction tx = db.beginTx()) {
         metaNode = getMetadataNodeData(tx);
         metaNodeId = metaNode.getId();
-        metaCountsNode = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+        metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
     } catch (Exception e) {
         e("createdRelationshipsEvent getMetadataNodeData: " + e);
         return;
@@ -644,7 +645,7 @@ private void deletedRelationshipsEvent(Relationship deletedRelationship) {
     try (Transaction tx = db.beginTx()) {
         metaNode = getMetadataNodeData(tx);
         metaNodeId = metaNode.getId();
-        metaCountsNode = new JSONObject(metaNode.getProperty(Metadata.KEY_COUNTS).toString());
+        metaCountsNode = new JSONObject(metaNode.getProperty(KEY_COUNTS).toString());
     } catch (Exception e) {
         e("deletedRelationshipsEvent getMetadataNodeData: " + e);
         return;
@@ -726,7 +727,7 @@ private void deletedRelationshipsEvent(Relationship deletedRelationship) {
             tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
             if (!returnedNodes.isEmpty()) {
                 Node node = returnedNodes.get(0);
-                node.setProperty(Metadata.KEY_COUNTS, value.toString());
+                node.setProperty(KEY_COUNTS, value.toString());
             }
             tx.commit();
         } catch (Throwable e) {
