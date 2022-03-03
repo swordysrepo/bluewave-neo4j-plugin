@@ -20,7 +20,7 @@ import static javaxt.utils.Console.console;
  *
  ******************************************************************************/
 
-public class Metadata implements Runnable {
+public class Metadata {
 
 
     private ConcurrentHashMap<String, NodeMetadata> nodes;
@@ -47,7 +47,7 @@ public class Metadata implements Runnable {
   //**************************************************************************
   //** Constructor
   //**************************************************************************
-    public Metadata(GraphDatabaseService databaseService, boolean recordCounts, boolean recordProperties) {
+    public Metadata(GraphDatabaseService databaseService) {
 
         nodes = new ConcurrentHashMap<>();
         db = databaseService;
@@ -127,46 +127,12 @@ public class Metadata implements Runnable {
 
 
   //**************************************************************************
-  //** run
-  //**************************************************************************
-    public void run() {
-
-    }
-
-
-  //**************************************************************************
   //** stop
   //**************************************************************************
     public void stop(){
         //cancelTimers();
     }
 
-
-  //**************************************************************************
-  //** handleEventBeforeCommit
-  //**************************************************************************
-    public void handleEventBeforeCommit(final TransactionData data) throws Exception {
-    }
-
-
-  //**************************************************************************
-  //** handleEventAfterCommit
-  //**************************************************************************
-    public synchronized void handleEventAfterCommit(final TransactionData data) throws Exception {
-    }
-
-
-
-  //**************************************************************************
-  //** isSafeToSync
-  //**************************************************************************
-    public static boolean isSafeToSync() {
-//        if(lastUpdate == 0) return true;
-//
-//        if(System.currentTimeMillis() - lastUpdate >= (60 * 1000)) return true;
-
-        return false;
-    }
 
   //**************************************************************************
   //** log

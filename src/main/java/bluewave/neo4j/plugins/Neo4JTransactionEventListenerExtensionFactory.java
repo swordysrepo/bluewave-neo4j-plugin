@@ -85,7 +85,6 @@ public class Neo4JTransactionEventListenerExtensionFactory
 
                     if (meta!=null){
                         meta.init(); //this will hang the server for a bit
-                        new Thread(meta).start();
                     }
                     if (logger!=null) new Thread(logger).start();
                 }
@@ -219,7 +218,7 @@ public class Neo4JTransactionEventListenerExtensionFactory
   //**************************************************************************
     private Metadata getMetadata(JSONObject config, GraphDatabaseAPI db){
 
-        Metadata metadata = new Metadata(db, false, true);
+        Metadata metadata = new Metadata(db);
 
         try{ metadata.setNodeName(config.get("node").toString()); }
         catch(Exception e){}
