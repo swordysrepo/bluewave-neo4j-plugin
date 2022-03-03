@@ -151,66 +151,174 @@ public class Metadata {
    */
     public void log(String action, String type, JSONArray data, String username){
 
-        if ((action.equals("create") || action.equals("delete")) && (type.equals("nodes") || type.equals("relationships")))
+        if ((action.equals("create") || action.equals("delete")) && (type.equals("nodes") || type.equals("relationships") || type.equals("properties")))
         synchronized(nodes){
             try{
-
-                for (int i=0; i<data.length(); i++){
-                    JSONArray entry = data.get(i).toJSONArray();
-                    if (entry.isEmpty()) continue;
-
-
-                    HashSet<String> labels = new HashSet<>();
-                    for (int j=1; j<entry.length(); j++){
-                        String label = entry.get(j).toString();
-                        if (label!=null) label = label.toLowerCase();
-                        labels.add(label);
-                    }
-
-
-
                     if (type.equals("nodes")){
-                        if (labels.contains(META_NODE_LABEL)) continue;
-
-                        NodeMetadata nodeMetadata = null;
-                        for (String label : labels){
-                            nodeMetadata = nodes.get(label);
-                            if (nodeMetadata!=null) break;
-                        }
+                        for (int i=0; i<data.length(); i++){
+                            JSONArray entry = data.get(i).toJSONArray();
+                            if (entry.isEmpty()) continue;
 
 
-                        if (nodeMetadata==null){
-                            nodeMetadata = new NodeMetadata();
-                            nodeMetadata.count.incrementAndGet();
-                            nodes.put(labels.iterator().next(), nodeMetadata);
-                        }
-                        else{
-                            if (action.equals("create")){
+                            HashSet<String> labels = new HashSet<>();
+                            for (int j=1; j<entry.length(); j++){
+                                String label = entry.get(j).toString();
+                                if (label!=null) label = label.toLowerCase();
+                                labels.add(label);
+                            }
+
+
+
+                        
+                            if (labels.contains(META_NODE_LABEL)) continue;
+
+                            NodeMetadata nodeMetadata = null;
+                            String labelKey = null;
+                            for (String label : labels){
+                                nodeMetadata = nodes.get(label);
+                                labelKey = label;
+                                if (nodeMetadata!=null) break;
+                            }
+
+
+                            if (nodeMetadata==null){
+                                nodeMetadata = new NodeMetadata();
                                 nodeMetadata.count.incrementAndGet();
+                                nodes.put(labels.iterator().next(), nodeMetadata);
                             }
                             else{
-                                Long n = nodeMetadata.count.decrementAndGet();
-                                if (n==0){
-                                    //TODO: Remove node
+                                if (action.equals("create")){
+                                    nodeMetadata.count.incrementAndGet();
+                                }
+                                else{
+                                    Long n = nodeMetadata.count.decrementAndGet();
+                                    if (n==0){
+                                        //TODO: Remove node
+                                        if(labelKey != null) nodes.remove(labelKey);
+                                    }
                                 }
                             }
+
+
+                            lastUpdate.set(System.currentTimeMillis());
                         }
-
-
-                        lastUpdate.set(System.currentTimeMillis());
-
                     }
                     else if (type.equals("relationships")){
                         //AtomicLong relations = (AtomicLong) node.get("relations").toObject();
+
+                        for (int i=0; i<data.length(); i++){
+                            JSONObject entry = data.get(i).toJSONObject();
+                            if (entry.isEmpty()) continue;
+
+                            JSONArray startNodeLabelsArray = entry.get("startNodeLabels").toJSONArray();
+                            HashSet<String> startNodelabels = new HashSet<>();
+                            for (int j=0; j<startNodeLabelsArray.length();j++) {
+                                String label = startNodeLabelsArray.get(j).toString();
+                                if (label!=null) label = label.toLowerCase();
+                                startNodelabels.add(label);
+                            }
+                            NodeMetadata startNodeMetadata = null;
+                            for (String label : startNodelabels){
+                                startNodeMetadata = nodes.get(label);
+                                if (startNodeMetadata!=null) break;
+                            }
+
+                            JSONArray endNodeLabelsArray = entry.get("endNodeLabels").toJSONArray();
+                            HashSet<String> endNodeLabels = new HashSet<>();
+                            for (int j=0; j<endNodeLabelsArray.length();j++) {
+                                String label = endNodeLabelsArray.get(j).toString();
+                                if (label!=null) label = label.toLowerCase();
+                                endNodeLabels.add(label);
+                            }
+
+                            NodeMetadata endNodeMetadata = null;
+                            for (String label : endNodeLabels){
+                                endNodeMetadata = nodes.get(label);
+                                if (endNodeMetadata!=null) break;
+                            }
+                            
+                            if (!startNodelabels.contains(META_NODE_LABEL)){
+                                if (startNodeMetadata==null){
+                                    startNodeMetadata = new NodeMetadata();
+                                    startNodeMetadata.relations.incrementAndGet();
+                                    nodes.put(startNodelabels.iterator().next(), startNodeMetadata);
+                                }
+                                else{
+                                    if (action.equals("create")){
+                                        startNodeMetadata.relations.incrementAndGet();
+                                    }
+                                    else{
+                                        startNodeMetadata.relations.decrementAndGet();
+                                    }
+                                }
+                            }
+
+                            if (!endNodeLabels.contains(META_NODE_LABEL)){
+                                if (endNodeMetadata==null){
+                                    endNodeMetadata = new NodeMetadata();
+                                    endNodeMetadata.relations.incrementAndGet();
+                                    nodes.put(endNodeLabels.iterator().next(), endNodeMetadata);
+                                }
+                                else{
+                                    if (action.equals("create")){
+                                        endNodeMetadata.relations.incrementAndGet();
+                                    }
+                                    else{
+                                        endNodeMetadata.relations.decrementAndGet();
+                                    }
+                                }
+                            }
+                            lastUpdate.set(System.currentTimeMillis());
+                        }
+                    } 
+                    else if(type.equals("properties")) {
+                        for (int i=0; i<data.length(); i++){
+                            JSONObject entry = data.get(i).toJSONObject();
+                            if (entry.isEmpty()) continue;
+
+
+                            HashSet<String> labels = new HashSet<>();
+                            JSONArray jsonLabels = entry.get("labels").toJSONArray();
+                            for (int j=0; j<jsonLabels.length();j++) {
+                                String label = jsonLabels.get(j).toString();
+                                if (label!=null) label = label.toLowerCase();
+                                labels.add(label);
+                            }
+
+                            if (labels.contains(META_NODE_LABEL)) continue;
+
+                            NodeMetadata nodeMetadata = null;
+                            for (String label : labels){
+                                nodeMetadata = nodes.get(label);
+                                if (nodeMetadata!=null) break;
+                            }
+
+
+                            if (nodeMetadata==null){
+                                nodeMetadata = new NodeMetadata();
+                                nodeMetadata.properties.put(entry.get("property").toString(), new PropertyMetadata());
+                                nodes.put(labels.iterator().next(), nodeMetadata);
+                            }
+                            else{
+                                if (action.equals("create")){
+                                    nodeMetadata.properties.put(entry.get("property").toString(), new PropertyMetadata());
+                                }
+                                else{
+                                    nodeMetadata.properties.remove(entry.get("property").toString());
+                                }
+                            }
+
+
+                            lastUpdate.set(System.currentTimeMillis());
+                        }
                     }
 
                 }
-            }
-            catch(Exception e){
-                e.printStackTrace();
-            }
-
-
+                catch(Exception e){
+                    e.printStackTrace();
+                }
+            
+            
             nodes.notifyAll();
 
         }

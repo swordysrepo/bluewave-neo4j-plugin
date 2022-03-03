@@ -182,6 +182,26 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     private JSONArray getRelationshipInfo(Iterator<Relationship> it) {
         JSONArray arr = new JSONArray();
+        JSONObject jsonObject = new JSONObject();
+        while(it.hasNext()) {
+            jsonObject = new JSONObject();
+            Relationship relationship = it.next();
+            Long startNodeId = relationship.getStartNodeId();
+            Long endNodeId = relationship.getEndNodeId();
+            jsonObject.set("startNodeId", startNodeId);
+            jsonObject.set("endNodeId", endNodeId);
+            JSONArray startNodeLabels = new JSONArray();
+            for(Label label: relationship.getStartNode().getLabels()) {
+                startNodeLabels.add(label);
+            }
+            jsonObject.set("startNodeLabels", startNodeLabels);
+            JSONArray endNodeLabels = new JSONArray();
+            for(Label label: relationship.getEndNode().getLabels()) {
+                endNodeLabels.add(label);
+            }
+            jsonObject.set("endNodeLabels", endNodeLabels);
+            arr.add(jsonObject);
+        };
         return arr;
     }
 
@@ -198,6 +218,27 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     private JSONArray getPropertyInfo(Iterator<PropertyEntry<Node>> it) {
         JSONArray arr = new JSONArray();
+        try {
+            
+            JSONObject jsonObject = new JSONObject();
+            while (it.hasNext()) {
+                jsonObject = new JSONObject();
+                
+                PropertyEntry<Node> node = it.next();
+                Long nodeId = node.entity().getId();
+                jsonObject.set("nodeId", nodeId);
+                Iterable<Label> labels = node.entity().getLabels();
+                JSONArray nodeLabels = new JSONArray();
+                for (Label label : labels) {
+                    nodeLabels.add(label.name());
+                }
+                jsonObject.set("labels", nodeLabels);
+                jsonObject.set("property", it.next().key());
+                arr.add(jsonObject);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         return arr;
     }
 
@@ -206,6 +247,16 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
   //**************************************************************************
     private JSONArray getRelationshipPropertyInfo(Iterator<PropertyEntry<Relationship>> it) {
         JSONArray arr = new JSONArray();
+        int count = 0;
+        try {
+            while (it.hasNext()) {
+                it.next();
+                count++;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        arr.add(count);
         return arr;
     }
 }
