@@ -24,7 +24,7 @@ import javaxt.json.JSONValue;
 
 import static javaxt.utils.Console.console;
 
-public class CountsHandler implements IHandleEvent{
+public class CountsHandler {
 
     private GraphDatabaseService db;
 
@@ -40,32 +40,8 @@ public class CountsHandler implements IHandleEvent{
         this.db = db;
     }
 
-    public void init() {
-        refresh();
-    }
 
 
-    //***********************************************
-    //** Saves the json to the db node
-    //***********************************************
-    public void save(JSONObject json) {
-        Label label = Label.label(Metadata.META_NODE_LABEL);
-        try (Transaction tx = db.beginTx()) {
-            ResourceIterator<Node> nodesIterator = tx.findNodes(label);
-            Node metadataNode = null;
-            if (nodesIterator.hasNext()) {
-                metadataNode = nodesIterator.next();
-            } else {
-                metadataNode = tx.createNode(label);
-            }
-            metadataNode.setProperty(KEY_COUNTS, json.toString());
-            tx.commit();
-        } catch (Exception e) {
-            e("init: " + e);
-        }
-    }
-
-    @Override
     public void handleEvent(TransactionData data) throws Exception {
 
       //***********************************************
@@ -161,35 +137,6 @@ public class CountsHandler implements IHandleEvent{
     }
 
 
-
-  //**************************************************************************
-  //** Runs the query and saves the results to db
-  //**************************************************************************
-  public void refresh() {
-    String query =
-            "MATCH (n) RETURN distinct labels(n) as labels, count(labels(n)) as count, sum(size((n) <--())) as relations";
-
-    JSONObject containerOfCounts = new JSONObject();
-    try (Transaction tx = db.beginTx()) {
-        Result rs = tx.execute(query);
-        while (rs.hasNext()) {
-            Map<String, Object> r = rs.next();
-            JSONArray labelValue = new JSONArray(r.get("labels").toString());
-            Set<String> labelSet = new HashSet<String>();
-            labelValue.forEach(l -> labelSet.add(l.toString()));
-            String nodeKey = String.valueOf(labelSet.hashCode());
-            Long countValue = Long.parseLong(r.get("count").toString());
-            Long relationsValue = Long.parseLong(r.get("relations").toString());
-            containerOfCounts.set(nodeKey,
-                    newNodesAndCountsObject(labelValue, countValue, relationsValue, 0, -1));
-        }
-        save(containerOfCounts);
-    } catch (Exception e) {
-        e.printStackTrace();
-    }
-  }
-
-
  /**
      * Holds the nodes and counts data
      * @param labels
@@ -274,7 +221,7 @@ public class CountsHandler implements IHandleEvent{
     }
 
     if (somethingToSave) {
-          saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+          //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
 }
 
@@ -326,7 +273,7 @@ public class CountsHandler implements IHandleEvent{
                 newNodesAndCountsObject(labelsValue, 1, 0, txId, nodeId));
     }
 
-    saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+    //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
 
   }
 
@@ -445,7 +392,7 @@ public class CountsHandler implements IHandleEvent{
             }
         }
     }
-    saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+    //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
 }
 
 
@@ -547,7 +494,7 @@ public class CountsHandler implements IHandleEvent{
         }
     }
 
-    saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+    //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
 }
 
 
@@ -614,7 +561,7 @@ public class CountsHandler implements IHandleEvent{
         entryValue.set(INDEX_TRANSACTION_ID, txId);
         entryValue.set(INDEX_NODE_ID, endNodeId);
         metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), entryValue);
-        saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+        //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     } else {
         /**
          * Create new entry
@@ -625,7 +572,7 @@ public class CountsHandler implements IHandleEvent{
         }
         JSONArray newEntryValue = newNodesAndCountsObject(labelsArray, 1L, 1L, txId, endNodeId);
         metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), newEntryValue);
-        saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+        //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
 
 }
@@ -690,7 +637,7 @@ private void deletedRelationshipsEvent(Relationship deletedRelationship) {
         entryValue.set(INDEX_TRANSACTION_ID, -1);
         entryValue.set(INDEX_NODE_ID, endNodeId);
         metaCountsNode.set(String.valueOf(newNodesLabels.hashCode()), entryValue);
-        saveBluewaveMeta_NodesAndCounts(metaCountsNode);
+        //saveBluewaveMeta_NodesAndCounts(metaCountsNode);
     }
 }
 
@@ -713,26 +660,5 @@ private void deletedRelationshipsEvent(Relationship deletedRelationship) {
     }
     return null;
 }
-
-
-    /**
-     * Save the json value object for the 'counts' property
-     * @param value
-     */
-    private void saveBluewaveMeta_NodesAndCounts(JSONObject value) {
-        try (Transaction tx = db.beginTx()) {
-            Label label = Label.label(Metadata.META_NODE_LABEL);
-            List<Node> returnedNodes = new ArrayList<>();
-
-            tx.findNodes(label).forEachRemaining(n -> returnedNodes.add(n));
-            if (!returnedNodes.isEmpty()) {
-                Node node = returnedNodes.get(0);
-                node.setProperty(KEY_COUNTS, value.toString());
-            }
-            tx.commit();
-        } catch (Throwable e) {
-            e("saveBluewaveMeta_NodesAndCounts: " + e);
-        }
-    }
 
 }

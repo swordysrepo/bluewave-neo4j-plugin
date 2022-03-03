@@ -89,11 +89,11 @@ public class PropertiesHandlerTest {
             Map<String, Object> record = result.next();
             Node metaNode = (Node) record.get("n");
 
-            console.log("** bluewave_metadata node contents: "
-                    // + " --properties--:> " +
-                    + metaNode.getProperties(PropertiesHandler.KEY_PROPERTIES).toString()
-                    // + "\n --counts--:> " + metaNode.getProperties(KEY_COUNTS).toString()
-                    + "\n");
+//            console.log("** bluewave_metadata node contents: "
+//                    // + " --properties--:> " +
+//                    + metaNode.getProperties(PropertiesHandler.KEY_PROPERTIES).toString()
+//                    // + "\n --counts--:> " + metaNode.getProperties(KEY_COUNTS).toString()
+//                    + "\n");
             tx.close();
         } catch (Exception e) {
             fail("ERROR -> " + e);
