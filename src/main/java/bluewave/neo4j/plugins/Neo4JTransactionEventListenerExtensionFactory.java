@@ -37,6 +37,27 @@ public class Neo4JTransactionEventListenerExtensionFactory
   //**************************************************************************
     public Neo4JTransactionEventListenerExtensionFactory() {
         super(ExtensionType.DATABASE, "neo4JTransactionEventHandler");
+
+      //Find and parse config file
+        javaxt.io.Jar jar = new javaxt.io.Jar(this);
+        java.io.File pluginDir = jar.getFile().getParentFile();
+        javaxt.io.File configFile = new javaxt.io.File(pluginDir, "config.json");
+        JSONObject config = null;
+        try { config = new JSONObject(configFile.getText()); }
+        catch (Exception e) { console.log(e.getMessage()); }
+
+
+      //Instantiate logger and metadata classes
+        if (config!=null){
+
+            if (logger==null)
+            try { logger = getLogger(config.get("logging").toJSONObject()); new Thread(logger).start(); }
+            catch (Exception e) { console.log(e.getMessage()); }
+
+            if (meta==null)
+            try { meta = getMetadata(config.get("metadata").toJSONObject()); }
+            catch (Exception e) { console.log(e.getMessage()); }
+        }
     }
 
 
@@ -56,37 +77,18 @@ public class Neo4JTransactionEventListenerExtensionFactory
 
 
 
-      //Find and parse config file
-        javaxt.io.Jar jar = new javaxt.io.Jar(this);
-        java.io.File pluginDir = jar.getFile().getParentFile();
-        javaxt.io.File configFile = new javaxt.io.File(pluginDir, "config.json");
-        JSONObject config = null;
-        try { config = new JSONObject(configFile.getText()); }
-        catch (Exception e) { console.log(e.getMessage()); }
-
-
-
-      //Instantiate logger and metadata classes
-        if (config!=null){
-            try { logger = getLogger(config.get("logging").toJSONObject()); }
-            catch (Exception e) { console.log(e.getMessage()); }
-
-            try { meta = getMetadata(config.get("metadata").toJSONObject(), db); }
-            catch (Exception e) { console.log(e.getMessage()); }
-        }
-
-
-      //
         availabilityGuard.addListener(new AvailabilityListener() {
 
             @Override
             public void available() {
                 if (dependencies.graphdatabaseAPI().databaseName().compareTo("system") != 0) {
-
-                    if (meta!=null){
+                    try{
+                        meta.setDatabaseService(db);
                         meta.init(); //this will hang the server for a bit
                     }
-                    if (logger!=null) new Thread(logger).start();
+                    catch(Exception e){
+                        if (meta!=null) console.log("Failed to initialize metadata");
+                    }
                 }
             }
 
@@ -216,9 +218,9 @@ public class Neo4JTransactionEventListenerExtensionFactory
   //**************************************************************************
   //** getMetadata
   //**************************************************************************
-    private Metadata getMetadata(JSONObject config, GraphDatabaseAPI db){
+    private Metadata getMetadata(JSONObject config){
 
-        Metadata metadata = new Metadata(db);
+        Metadata metadata = new Metadata();
 
         try{ metadata.setNodeName(config.get("node").toString()); }
         catch(Exception e){}

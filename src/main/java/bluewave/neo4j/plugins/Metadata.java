@@ -47,10 +47,9 @@ public class Metadata {
   //**************************************************************************
   //** Constructor
   //**************************************************************************
-    public Metadata(GraphDatabaseService databaseService) {
+    public Metadata() {
 
         nodes = new ConcurrentHashMap<>();
-        db = databaseService;
         lastUpdate = new AtomicLong(0L);
 
 
@@ -79,6 +78,7 @@ public class Metadata {
       //Sync all nodes every 24 hours
         {
             javaxt.utils.Date startDate = new javaxt.utils.Date();
+            startDate.setTimeZone("America/New York");
             startDate.removeTimeStamp(); startDate.add(26, "hours"); //2AM
             long interval = 24*60*60*1000; //24 hours
             java.util.Timer timer = new java.util.Timer();
@@ -86,7 +86,12 @@ public class Metadata {
                 public void run(){
                     synchronized (lastUpdate){
                         if (lastUpdate.get()==0){
-                            init();
+                            try{
+                                init();
+                            }
+                            catch(Exception e){
+
+                            }
                         }
                     }
                 }
@@ -96,24 +101,29 @@ public class Metadata {
 
 
   //**************************************************************************
+  //** setDatabaseService
+  //**************************************************************************
+    public void setDatabaseService(GraphDatabaseService databaseService){
+        db = databaseService;
+    }
+
+
+  //**************************************************************************
   //** init
   //**************************************************************************
   /** Used to initialize the Metadata class and populate the metadata node
    */
-    public void init() {
+    public void init() throws Exception {
+
         long startTime = System.currentTimeMillis();
-        try{
-            updateNodes();
-            saveNodes();
-        }
-        catch(Exception e){
-            e.printStackTrace();
-        }
+
+        updateNodes();
+        saveNodes();
+
         long ellapsedTime = System.currentTimeMillis()-startTime;
-        console.log("Fetched nodes and properties in " + ellapsedTime + "ms");
-
-
+        console.log("Found " + nodes.size() + " distinct nodes in " + ellapsedTime + "ms");
         lastUpdate.set(0);
+
     }
 
 
