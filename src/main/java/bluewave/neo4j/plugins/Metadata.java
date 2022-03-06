@@ -5,7 +5,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.event.TransactionData;
 
 import javaxt.json.*;
 import static javaxt.utils.Console.console;
@@ -166,11 +165,8 @@ public class Metadata {
                                 if (label!=null) label = label.toLowerCase();
                                 labels.add(label);
                             }
-
-
-
                         
-                            if (labels.contains(META_NODE_LABEL)) continue;
+                            if (labels.contains(META_NODE_LABEL) || labels.isEmpty()) continue;
 
                             NodeMetadata nodeMetadata = null;
                             String labelKey = null;
@@ -237,7 +233,7 @@ public class Metadata {
                                 if (endNodeMetadata!=null) break;
                             }
                             
-                            if (!startNodelabels.contains(META_NODE_LABEL)){
+                            if (!startNodelabels.contains(META_NODE_LABEL) && !startNodelabels.isEmpty()){
                                 if (startNodeMetadata==null){
                                     startNodeMetadata = new NodeMetadata();
                                     startNodeMetadata.relations.incrementAndGet();
@@ -253,7 +249,7 @@ public class Metadata {
                                 }
                             }
 
-                            if (!endNodeLabels.contains(META_NODE_LABEL)){
+                            if (!endNodeLabels.contains(META_NODE_LABEL) && !endNodeLabels.isEmpty()){
                                 if (endNodeMetadata==null){
                                     endNodeMetadata = new NodeMetadata();
                                     endNodeMetadata.relations.incrementAndGet();
@@ -285,7 +281,7 @@ public class Metadata {
                                 labels.add(label);
                             }
 
-                            if (labels.contains(META_NODE_LABEL)) continue;
+                            if (labels.contains(META_NODE_LABEL) || labels.isEmpty()) continue;
 
                             NodeMetadata nodeMetadata = null;
                             for (String label : labels){
@@ -501,5 +497,26 @@ public class Metadata {
             json.set("isIndexed", isIndexed);
             return json;
         }
+    }
+
+    public void printMaps() {
+        if(nodes == null) return;
+
+        // Print Properties
+        console.log("Map contents:->");
+        HashMap<String, Object[]> entries = new HashMap<>();
+        nodes.entrySet().forEach((t) -> {
+            NodeMetadata meta = t.getValue();
+            Object [] props = meta.properties.keySet().toArray();
+            entries.put(t.getKey(), props);
+        });
+        entries.keySet().forEach(k -> {
+            Object[] props = entries.get(k);
+            List<String>propsList = new ArrayList();
+            for(Object obj : props)
+                propsList.add(obj.toString());            
+            console.log(k + ": " + propsList.toString());
+        });
+        console.log("Map contents.");
     }
 }

@@ -233,7 +233,7 @@ public class Neo4JTransactionEventListener implements TransactionEventListener<O
                     nodeLabels.add(label.name());
                 }
                 jsonObject.set("labels", nodeLabels);
-                jsonObject.set("property", it.next().key());
+                jsonObject.set("property", node.key());
                 arr.add(jsonObject);
             }
         } catch (Exception e) {
