@@ -65,7 +65,7 @@ public class MetadataTest {
 
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
 
-        // App properties
+        // Add properties
         try (Transaction tx = dbService.beginTx()) {
             tx.execute("MATCH (n:TESTLABEL1) SET n.color = 'blue' return n");
             tx.execute("MATCH (n:TESTLABEL1) SET n.car = 'toyota' return n");
@@ -99,7 +99,7 @@ public class MetadataTest {
 
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
 
-        // App properties
+        // Remove properties
         try (Transaction tx = dbService.beginTx()) {
             tx.execute("MATCH (n:TESTLABEL1) REMOVE n.prop1 return n");
             tx.execute("MATCH (n:TESTLABEL2) REMOVE n.prop1 return n");
@@ -135,7 +135,7 @@ public class MetadataTest {
 
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
 
-        // App relationship
+        // Add relationship
         try (Transaction tx = dbService.beginTx()) {
             tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL2) CREATE (s)-[r:FRIEND]->(e) return type(r)");
             tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL3) CREATE (s)-[r:FRIEND]->(e) return type(r)");
@@ -176,7 +176,7 @@ public class MetadataTest {
 
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
 
-        // App relationship
+        // Add relationship
         try (Transaction tx = dbService.beginTx()) {
             tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL2) CREATE (s)-[r:FRIEND]->(e) return type(r)");
             tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL3) CREATE (s)-[r:FRIEND]->(e) return type(r)");
@@ -227,6 +227,105 @@ public class MetadataTest {
         printMetadataNodeContents(dbService);        
 
     }    
+
+
+    @Test
+    public void test_Add_Node() {
+        console.log("********************************************************************************");
+        console.log("***************************** NEW TEST *****************************************");
+        console.log("**                                                                            **");
+        console.log("** test_Add_Node()                                                            **");
+        console.log("**                                                                            **");
+        console.log("**                                                                            **");
+
+        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+
+        // Add node
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute("CREATE (n1:TESTLABEL1{prop1:'val2'})");
+            tx.execute("CREATE (n1:TESTLABEL1{prop1:'val3'})");
+            tx.execute("CREATE (n1:TESTLABEL1{prop1:'val4'})");
+            tx.execute("CREATE (n1:TESTLABEL1{prop1:'val5'})");
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(80);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
+
+         printMetadataNodeContents(dbService);
+    }    
+
+    /**
+     * Run this test:
+     * mvn -Dtest=MetadataTest#test_Remove_Node test
+     */
+    @Test
+    public void test_Remove_Node() {
+        console.log("********************************************************************************");
+        console.log("***************************** NEW TEST *****************************************");
+        console.log("**                                                                            **");
+        console.log("** test_Remove_Node()                                                         **");
+        console.log("**                                                                            **");
+        console.log("**                                                                            **");
+
+        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+
+        // Add node
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute("CREATE (n1:TESTLABEL1{prop1:'val2'})");
+            tx.execute("CREATE (n2:TESTLABEL1{prop1:'val3'})");
+            tx.execute("CREATE (n3:TESTLABEL1{prop1:'val4'})");
+            tx.execute("CREATE (n4:TESTLABEL1{prop1:'val5'})");
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail();
+        }
+
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(80);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
+
+         printMetadataNodeContents(dbService);
+
+        // Remove node
+        try (Transaction tx = dbService.beginTx()) {
+            // **** HELP ***** Can't figure out why either of below lines don't work
+            // tx.execute("MATCH (n:TESTLABEL1) where n.prop1='val1' DELETE n");
+            // tx.execute("MATCH (n:TESTLABEL1 { prop1:'val1' }) DELETE n");
+            // tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail();
+        }
+
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(80);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
+
+         printMetadataNodeContents(dbService);         
+    }      
 
     private void printMetadataNodeContents(GraphDatabaseService dbService) {
         String sql = String.format(GET_BLUEWAVE_METADATA_NODE_SQL, Metadata.META_NODE_LABEL);
