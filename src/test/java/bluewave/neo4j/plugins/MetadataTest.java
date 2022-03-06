@@ -89,11 +89,47 @@ public class MetadataTest {
     }
 
     @Test
-    public void test_Relationships() {
+    public void test_Remove_Property() {
         console.log("********************************************************************************");
         console.log("***************************** NEW TEST *****************************************");
         console.log("**                                                                            **");
-        console.log("**     public void test_Relationships                                         **");
+        console.log("** test_Remove_Property()                                                     **");
+        console.log("**                                                                            **");
+        console.log("**                                                                            **");
+
+        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+
+        // App properties
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute("MATCH (n:TESTLABEL1) REMOVE n.prop1 return n");
+            tx.execute("MATCH (n:TESTLABEL2) REMOVE n.prop1 return n");
+            tx.execute("MATCH (n:TESTLABEL3) REMOVE n.prop1 return n");
+            tx.execute("MATCH (n:TESTLABEL4) REMOVE n.prop1 return n");
+            tx.execute("MATCH (n:TESTLABEL5) REMOVE n.prop1 return n");
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(80);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
+
+         printMetadataNodeContents(dbService);
+    }    
+
+    @Test
+    public void test_Add_Relationships() {
+        console.log("********************************************************************************");
+        console.log("***************************** NEW TEST *****************************************");
+        console.log("**                                                                            **");
+        console.log("**     test_Add_Relationships                                                 **");
         console.log("**                                                                            **");
         console.log("**                                                                            **");
 
@@ -128,6 +164,69 @@ public class MetadataTest {
 
          printMetadataNodeContents(dbService);
     }
+
+    @Test
+    public void test_Remove_Relationships() {
+        console.log("********************************************************************************");
+        console.log("***************************** NEW TEST *****************************************");
+        console.log("**                                                                            **");
+        console.log("**     test_Remove_Relationships                                              **");
+        console.log("**                                                                            **");
+        console.log("**                                                                            **");
+
+        GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
+
+        // App relationship
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL2) CREATE (s)-[r:FRIEND]->(e) return type(r)");
+            tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL3) CREATE (s)-[r:FRIEND]->(e) return type(r)");
+            tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL4) CREATE (s)-[r:FRIEND]->(e) return type(r)");
+            tx.execute("MATCH (s:TESTLABEL1), (e:TESTLABEL5) CREATE (s)-[r:FRIEND]->(e) return type(r)");
+
+            tx.execute("MATCH (s:TESTLABEL5), (e:TESTLABEL1) CREATE (s)-[r:ENEMY]->(e) return type(r)");
+            tx.execute("MATCH (s:TESTLABEL5), (e:TESTLABEL2) CREATE (s)-[r:ENEMY]->(e) return type(r)");
+            tx.execute("MATCH (s:TESTLABEL5), (e:TESTLABEL3) CREATE (s)-[r:ENEMY]->(e) return type(r)");
+            tx.execute("MATCH (s:TESTLABEL5), (e:TESTLABEL4) CREATE (s)-[r:ENEMY]->(e) return type(r)");
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
+
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(80);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
+
+        printMetadataNodeContents(dbService);
+
+        // Delete relationship
+        try (Transaction tx = dbService.beginTx()) {
+            tx.execute("MATCH (n:TESTLABEL5)-[r:ENEMY]->() DELETE r");
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
+
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(80);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
+
+        printMetadataNodeContents(dbService);        
+
+    }    
 
     private void printMetadataNodeContents(GraphDatabaseService dbService) {
         String sql = String.format(GET_BLUEWAVE_METADATA_NODE_SQL, Metadata.META_NODE_LABEL);
