@@ -185,12 +185,15 @@ public class Metadata {
                             else{
                                 if (action.equals("create")){
                                     nodeMetadata.count.incrementAndGet();
+                                    nodes.put(labels.iterator().next(), nodeMetadata);
                                 }
                                 else{
                                     Long n = nodeMetadata.count.decrementAndGet();
                                     if (n==0){
                                         //TODO: Remove node
                                         if(labelKey != null) nodes.remove(labelKey);
+                                    } else {
+                                        nodes.put(labels.iterator().next(), nodeMetadata);
                                     }
                                 }
                             }
@@ -300,7 +303,8 @@ public class Metadata {
                                     nodeMetadata.properties.put(entry.get("property").toString(), new PropertyMetadata());
                                 }
                                 else{
-                                    nodeMetadata.properties.remove(entry.get("property").toString());
+                                    // Not deleting properties at this time
+                                    //nodeMetadata.properties.remove(entry.get("property").toString());
                                 }
                             }
 

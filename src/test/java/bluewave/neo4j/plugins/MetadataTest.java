@@ -278,7 +278,14 @@ public class MetadataTest {
         console.log("**                                                                            **");
 
         GraphDatabaseService dbService = embeddedDatabaseServer.defaultDatabaseService();
-
+        // Create index
+        // try (Transaction tx = dbService.beginTx()) {
+        //     tx.execute("CREATE INDEX ON :TESTLABEL1(prop1)");
+        //     tx.commit();
+        // } catch (Exception e) {
+        //     e.printStackTrace();
+        //     fail();
+        // }
         // Add node
         try (Transaction tx = dbService.beginTx()) {
             tx.execute("CREATE (n1:TESTLABEL1{prop1:'val2'})");
@@ -305,10 +312,10 @@ public class MetadataTest {
 
         // Remove node
         try (Transaction tx = dbService.beginTx()) {
-            // **** HELP ***** Can't figure out why either of below lines don't work
-            // tx.execute("MATCH (n:TESTLABEL1) where n.prop1='val1' DELETE n");
+            console.log("Calling DELETE node");
+            tx.execute("MATCH (n:TESTLABEL1) where n.prop1='val1' DELETE n");
             // tx.execute("MATCH (n:TESTLABEL1 { prop1:'val1' }) DELETE n");
-            // tx.commit();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             fail();
@@ -324,18 +331,31 @@ public class MetadataTest {
             console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
         }
 
-         printMetadataNodeContents(dbService);         
+         printMetadataNodeContents(dbService);   
+         
+        try {
+            // Initial data has been loaded. Sleep so sync can work.
+            console.log("Test sleep: " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+            TimeUnit.SECONDS.sleep(5);
+        }catch(Exception e) {
+            e.printStackTrace();
+        } finally {
+            console.log("Test sleep finished. " + new Date().toString("EEE MMM dd HH:mm:ss z yyyy"));
+        }
     }      
 
     private void printMetadataNodeContents(GraphDatabaseService dbService) {
         String sql = String.format(GET_BLUEWAVE_METADATA_NODE_SQL, Metadata.META_NODE_LABEL);
-       
-        try (Transaction tx = dbService.beginTx()) {
+       console.log(sql);
+        try (Transaction tx = embeddedDatabaseServer.defaultDatabaseService().beginTx()) {
             Result result = tx.execute(sql);
-            Map<String, Object> record = result.next();
-            Node metaNode = (Node) record.get("n");
-
-            console.log("** node contents: \n\n" + metaNode.getProperties("nodes").toString() + "\n");
+            if(result.hasNext()) {
+                Map<String, Object> record = result.next();
+                Node metaNode = (Node) record.get("n");
+                console.log("** node contents: \n\n" + metaNode.getProperties("nodes").toString() + "\n");
+            } else {
+                fail("###### Error retrieving metadata node. ######");
+            }
             tx.close();
         } catch (Exception e) {
             fail("ERROR -> " + e);
@@ -377,6 +397,15 @@ public class MetadataTest {
                 e.printStackTrace();
                 fail("Error: " + e);
             }
+
+            try (Transaction tx = dbService.beginTx()) {
+                tx.execute("CREATE INDEX ON :TESTLABEL1(prop1)");
+                tx.commit();
+            } catch (Exception e) {
+                e.printStackTrace();
+                fail();
+            }
+
         } catch (Throwable e) {
             e.printStackTrace();
             fail("Error: " + e);
