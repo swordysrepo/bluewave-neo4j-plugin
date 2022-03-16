@@ -77,6 +77,8 @@ jobs:
 
       - name: print out the directory
         run: dir
+      - name: print out the directory 2
+        run: dir target
      # copy jar file to main directory
       # - name: Copy jar file to main directory
       #   run: |
