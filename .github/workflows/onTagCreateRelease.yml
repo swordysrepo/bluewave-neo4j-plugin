@@ -84,30 +84,30 @@ jobs:
         run: |
           mv target/bluewave_tx-1.0.0.jar bluewave_tx-${{ env.releaseLabel }}.jar
 
-    ### Add compiled project files to new directory
+    # ### Add compiled project files to new directory
 
-    #  # Copy release assets to compiled project Directory
-      - name: Copy release assets to compiled project Directory
-        run: cp bluewave_tx-${{ env.releaseLabel }}.jar compiledProjectDirectory
+    # #  # Copy release assets to compiled project Directory
+    #   - name: Copy release assets to compiled project Directory
+    #     run: cp bluewave_tx-${{ env.releaseLabel }}.jar compiledProjectDirectory
 
-    #   # Zip project
-      - name: Zip configured project directory into downloadable release.zip file
-        run: cd compiledProjectDirectory; zip -r ../bluewave_tx-${{ env.releaseLabel }}.zip *
+    # #   # Zip project
+    #   - name: Zip configured project directory into downloadable release.zip file
+    #     run: cd compiledProjectDirectory; zip -r ../bluewave_tx-${{ env.releaseLabel }}.zip *
 
 
-     # Create the release to serve as a place to export to
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions
-        with:
-          tag_name: ${{ env.releaseLabel }}
-          release_name: Release ${{ env.releaseLabel }}
-          body: |
-            BlueWave Neo4j Plugin Release ${{ env.releaseLabel }}
-          draft: false
-          prerelease: false
+    #  # Create the release to serve as a place to export to
+    #   - name: Create Release
+    #     id: create_release
+    #     uses: actions/create-release@v1
+    #     env:
+    #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions
+    #     with:
+    #       tag_name: ${{ env.releaseLabel }}
+    #       release_name: Release ${{ env.releaseLabel }}
+    #       body: |
+    #         BlueWave Neo4j Plugin Release ${{ env.releaseLabel }}
+    #       draft: false
+    #       prerelease: false
 
 
     #  # add packaged project to Github Release page
